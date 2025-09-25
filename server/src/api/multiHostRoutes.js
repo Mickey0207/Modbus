@@ -53,25 +53,89 @@ module.exports = function createMultiHostRoutes(multiHostManager) {
         res.json({ success: true, data: results });
     });
 
+    // Helper: classify errors into friendly buckets for better diagnostics
+    function classifyError(error) {
+        const msg = String(error?.message || '').toLowerCase();
+        const code = error?.code || error?.errno || '';
+        const has = (s) => msg.includes(String(s).toLowerCase());
+
+        if (has('未連線') || has('not connected')) return { http: 409, code: 'NOT_CONNECTED' };
+        if (code === 'ETIMEDOUT' || has('timeout') || has('timed out')) return { http: 504, code: 'TIMEOUT' };
+        // Common Modbus / device anomalies
+        if (has('modbus') || has('exception code') || has('illegal') || has('crc') || has('data length')) {
+            return { http: 502, code: 'DEVICE_ERROR' };
+        }
+        if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+            return { http: 502, code: 'NETWORK_ERROR' };
+        }
+        return { http: 500, code: 'UNKNOWN_ERROR' };
+    }
+
     router.post('/:id/read/holding-registers', async (req, res) => {
+        const { id } = req.params;
+        // Parse and validate params early
+        const address = Number(req?.body?.address);
+        const length = Number(req?.body?.length);
+
+        // Basic validations (Modbus holding registers: 1..125 per spec; address >= 0)
+        if (!Number.isFinite(address) || !Number.isFinite(length) || address < 0 || length < 1 || length > 125) {
+            return res.status(400).json({
+                success: false,
+                message: '參數錯誤：address 必須 >= 0，length 必須介於 1..125',
+                error: { code: 'INVALID_PARAMS', details: { id, address, length } },
+            });
+        }
+
+        // Fast-path check for connection state to give clearer error than generic 500
+        const item = multiHostManager.hosts?.get?.(id);
+        if (!item || !item.connected || !item.client) {
+            const cfg = item?.config;
+            return res.status(409).json({
+                success: false,
+                message: `主機未連線: ${id}${cfg ? ` (${cfg.ip}:${cfg.port})` : ''}`,
+                error: { code: 'NOT_CONNECTED', details: { id } },
+            });
+        }
+
         try {
-            const { id } = req.params;
-            const { address, length } = req.body || {};
             const data = await multiHostManager.readHoldingRegisters(id, address, length);
-            res.json({ success: true, data });
+            return res.json({ success: true, data });
         } catch (error) {
-            res.status(500).json({ success: false, message: error.message });
+            const kind = classifyError(error);
+            return res.status(kind.http).json({
+                success: false,
+                message: error?.message || '讀取失敗',
+                error: { code: kind.code, details: { id, address, length } },
+            });
         }
     });
 
+    // 已移除 0x04 輸入暫存器端點，僅保留 0x03
+
     router.post('/:id/write/single-register', async (req, res) => {
+        const { id } = req.params;
+        const address = Number(req?.body?.address);
+        const value = Number(req?.body?.value);
+
+        if (!Number.isFinite(address) || address < 0) {
+            return res.status(400).json({ success: false, message: '參數錯誤：address 必須 >= 0', error: { code: 'INVALID_PARAMS', details: { id, address, value } } });
+        }
+        if (!Number.isFinite(value) || value < 0 || value > 0xFFFF) {
+            return res.status(400).json({ success: false, message: '參數錯誤：value 必須為 0..65535 的整數', error: { code: 'INVALID_PARAMS', details: { id, address, value } } });
+        }
+
+        const item = multiHostManager.hosts?.get?.(id);
+        if (!item || !item.connected || !item.client) {
+            const cfg = item?.config;
+            return res.status(409).json({ success: false, message: `主機未連線: ${id}${cfg ? ` (${cfg.ip}:${cfg.port})` : ''}`, error: { code: 'NOT_CONNECTED', details: { id } } });
+        }
+
         try {
-            const { id } = req.params;
-            const { address, value } = req.body || {};
             await multiHostManager.writeSingleRegister(id, address, value);
-            res.json({ success: true, message: '寫入成功' });
+            return res.json({ success: true, message: '寫入成功' });
         } catch (error) {
-            res.status(500).json({ success: false, message: error.message });
+            const kind = classifyError(error);
+            return res.status(kind.http).json({ success: false, message: error?.message || '寫入失敗', error: { code: kind.code, details: { id, address, value } } });
         }
     });
 

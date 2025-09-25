@@ -3,12 +3,12 @@ import { listRegistry, upsertHost, deleteHost, connectAll, disconnectAll } from 
 import { connectHost, disconnectHost, getStatuses } from './api'
 import { useMessages } from '../../contexts/MessagesContext'
 
-export default function HostsManager({ showTitle = true }: { showTitle?: boolean }) {
+export default function HostsManager({ showTitle = true, showList = true, initial }: { showTitle?: boolean; showList?: boolean; initial?: { id: string; ip: string; port: number; unitId: number } }) {
   const { push } = useMessages()
   const [hosts, setHosts] = useState<any[]>([])
   const [statuses, setStatuses] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ id: '', ip: '', port: 502, unitId: 1 })
+  const [form, setForm] = useState(initial ?? { id: '', ip: '', port: 502, unitId: 1 })
 
   const merged = useMemo(() => {
     const map: Record<string, any> = {}
@@ -30,6 +30,9 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
   }
 
   useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    if (initial) setForm(initial)
+  }, [initial])
 
   async function onSave() {
     try {
@@ -107,6 +110,7 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
         </div>
       </div>
 
+      {showList && (
       <div className="card stack">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h5 style={{ margin: 0 }}>已註冊主機</h5>
@@ -157,6 +161,7 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
           </table>
         </div>
       </div>
+      )}
     </div>
   )
 }

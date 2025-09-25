@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from './Modal'
 import { useMessages } from '../contexts/MessagesContext'
 import { getStatuses, readHoldingRegisters, writeSingleRegister } from '../features/hosts/api'
-import HostsManager from '../features/hosts/HostsManager'
 import Select from './Select'
 import { useHosts } from '../features/hosts/useHosts'
 
@@ -13,7 +12,6 @@ export default function Navbar() {
   const latest = messages[0]
   // 使用輪詢每 2 秒更新一次主機狀態，確保彈窗內的「已連線/未連線」即時顯示
   const { hosts, refresh } = useHosts({ pollMs: 2000 })
-  const [openHosts, setOpenHosts] = useState(false)
   const [openRead, setOpenRead] = useState(false)
   const [openWrite, setOpenWrite] = useState(false)
   const [openLogs, setOpenLogs] = useState(false)
@@ -29,7 +27,6 @@ export default function Navbar() {
         <a className="navbar-brand" href="#">Modbus Tool</a>
         <div className="navbar-title">主機：{connectedCount}/{hosts.length} 已連線</div>
         <div className="navbar-actions">
-          <button className="navbar-btn" onClick={() => setOpenHosts(true)}>主機管理</button>
           <button className="navbar-btn primary" onClick={() => setOpenRead(true)}>讀取</button>
           <button className="navbar-btn" onClick={() => setOpenWrite(true)}>寫入</button>
         </div>
@@ -41,7 +38,6 @@ export default function Navbar() {
           </div>
         </div>
       </div>
-      <HostsModal open={openHosts} onClose={() => setOpenHosts(false)} />
       <ReadModal open={openRead} onClose={() => setOpenRead(false)} hosts={hosts} push={push} />
       <WriteModal open={openWrite} onClose={() => setOpenWrite(false)} hosts={hosts} push={push} />
       <LogsModal open={openLogs} onClose={() => setOpenLogs(false)} />
@@ -52,117 +48,139 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
   const [selected, setSelected] = useState('')
   const [addr, setAddr] = useState(0)
   const [len, setLen] = useState(1)
-  const [result, setResult] = useState<number[] | null>(null)
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState<'table' | 'list'>('table')
-  const [fmt, setFmt] = useState<'dec' | 'hex'>('dec')
+  const [fmt, setFmt] = useState<'hex' | 'dec' | 'oct' | 'bin'>('dec')
+  const [history, setHistory] = useState<Array<{ id: string; ts: number; unitId?: number; values: number[]; hostId: string; ip?: string; port?: number; addr: number; len: number }>>([])
+  const [chunked, setChunked] = useState(false)
+  const [chunkSize, setChunkSize] = useState(20)
   const selectedHost = useMemo(() => hosts.find(h => h.id === selected), [hosts, selected])
 
-  useEffect(() => { if (open) { setResult(null) } }, [open])
+  useEffect(() => { if (open) { /* 開啟時重置顯示 */ setHistory([]) } }, [open])
+
+  const formatValue = (v: number) => (
+    fmt === 'hex' ? '0x' + v.toString(16).toUpperCase() :
+    fmt === 'oct' ? '0o' + v.toString(8) :
+    fmt === 'bin' ? '0b' + v.toString(2) : String(v)
+  )
 
   async function doRead() {
     if (!selected) { push('warning', '請先選擇主機'); return }
+    if (!selectedHost?.connected) { push('warning', '目標主機未連線'); return }
+    if (!Number.isFinite(addr) || addr < 0 || addr > 65535) {
+      push('warning', '起始位址需為 0~65535 的整數');
+      return
+    }
+    if (!Number.isFinite(len) || len <= 0 || len > 125) {
+      push('warning', '讀取長度需為 1~125 的整數');
+      return
+    }
+    if (addr + len - 1 > 65535) {
+      push('warning', '位址加上長度超出範圍 (最後位址需 ≤ 65535)');
+      return
+    }
     try {
       setLoading(true)
-      const res = await readHoldingRegisters(selected, Number(addr), Number(len))
-      if (!res.success) throw new Error('讀取失敗')
-      setResult(res.data)
+      let values: number[] = []
+      const r = await readHoldingRegisters(selected, Number(addr), Number(len))
+      if (!r.success || !Array.isArray(r.data)) throw new Error('讀取失敗')
+      values = r.data
+      setHistory(h => [{ id: crypto.randomUUID?.() || String(Date.now()), ts: Date.now(), unitId: selectedHost?.unitId, values, hostId: selected, ip: selectedHost?.ip, port: selectedHost?.port, addr: Number(addr), len: Number(len) }, ...h])
       push('success', `讀取成功：${selected} @${addr} x${len}`)
     } catch (e: any) {
-      push('error', e.message || String(e))
+      push('error', e?.message ? `讀取失敗：${e.message}` : '讀取失敗')
     } finally { setLoading(false) }
   }
 
+  const latest = history[0]
+  const copyLatest = async () => {
+    if (!latest) return
+    const text = latest.values.map(formatValue).join(', ')
+    try { await navigator.clipboard.writeText(text); push('success', '已複製到剪貼簿') }
+    catch { push('warning', '無法存取剪貼簿') }
+  }
+
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="stack">
-        <h3 style={{ margin: '0 0 4px', color: '#111' }}>讀取保持暫存器（指定主機）</h3>
-        <div className="text-muted">請先選擇目標主機，再進行讀取或寫入操作。</div>
-
-        <div className="form">
-          <div className="form-group">
-            <label>目標主機</label>
-            <Select
-              value={selected}
-              onChange={setSelected}
-              options={[{ value: '', label: <span className="text-muted">— 請選擇 —</span> }, ...hosts.map(h => ({
-                value: h.id,
-                label: (<span><strong>{h.id}</strong> <span className={`badge ${h.connected ? 'badge--ok' : 'badge--err'}`} style={{ marginLeft: 6 }}>{h.connected ? '已連線' : '未連線'}</span></span>)
-              }))]}
-            />
-          </div>
-          {selected && (
-            <div className="text-muted">目前狀態：{selectedHost?.connected ? '已連線' : '未連線'}</div>
-          )}
-          <h4 style={{ margin: '4px 0', color: '#111' }}>讀取參數</h4>
-          <div className="form__grid">
+    <Modal open={open} onClose={onClose} size="lg">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* 左欄：設定 */}
+        <div className="stack">
+          <h3 style={{ margin: '0 0 4px', color: '#111' }}>讀取保持暫存器</h3>
+          <div className="text-muted">請選擇目標主機、起始位址與讀取長度後執行讀取（Function 0x03）。</div>
+          <div className="form">
             <div className="form-group">
-              <label>起始位址</label>
-              <input type="number" value={addr} onChange={e => setAddr(Number(e.target.value))} />
-              <div className="hint">對應 function code 0x03 的起始位址</div>
+              <label>目標主機</label>
+              <Select
+                value={selected}
+                onChange={setSelected}
+                options={[{ value: '', label: <span className="text-muted">— 請選擇 —</span> }, ...hosts.map(h => ({
+                  value: h.id,
+                  label: (<span><strong>{h.id}</strong> <span className={`badge ${h.connected ? 'badge--ok' : 'badge--err'}`} style={{ marginLeft: 6 }}>{h.connected ? '已連線' : '未連線'}</span></span>)
+                }))]}
+              />
             </div>
-            <div className="form-group">
-              <label>讀取長度</label>
-              <input type="number" value={len} onChange={e => setLen(Number(e.target.value))} />
-              <div className="hint">一次讀取的 registries 數量</div>
-            </div>
-          </div>
-          <div className="form__actions">
-            <button className="btn" onClick={doRead} disabled={loading || !selected || !selectedHost?.connected}>讀取</button>
-          </div>
-          <div className="card" style={{ marginTop: 8 }}>
-            <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-              <div className="row">
-                <button className={`btn btn--sm ${view==='table' ? '' : 'btn--outline'}`} onClick={() => setView('table')} disabled={!Array.isArray(result)}>表格</button>
-                <button className={`btn btn--sm ${view==='list' ? '' : 'btn--outline'}`} onClick={() => setView('list')} disabled={!Array.isArray(result)}>清單</button>
-              </div>
-              <div className="row">
-                <button className={`btn btn--sm ${fmt==='dec' ? '' : 'btn--outline'}`} onClick={() => setFmt('dec')} disabled={!Array.isArray(result)}>十進位</button>
-                <button className={`btn btn--sm ${fmt==='hex' ? '' : 'btn--outline'}`} onClick={() => setFmt('hex')} disabled={!Array.isArray(result)}>十六進位</button>
-                <button
-                  className="btn btn--sm btn--outline"
-                  onClick={async () => {
-                    if (!Array.isArray(result)) return
-                    const values = result.map(v => fmt==='hex' ? '0x' + v.toString(16).toUpperCase() : String(v))
-                    const text = view === 'table'
-                      ? ['address,value', ...values.map((v, i) => `${addr + i},${v}`)].join('\n')
-                      : values.join(', ')
-                    try { await navigator.clipboard.writeText(text); push('success', '已複製到剪貼簿') }
-                    catch { push('warning', '無法存取剪貼簿') }
-                  }}
-                  disabled={!Array.isArray(result) || result.length === 0}
-                >複製</button>
-              </div>
-            </div>
-
-            {!Array.isArray(result) || result.length === 0 ? (
-              <div className="text-muted">尚未讀取</div>
-            ) : view === 'table' ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>位址</th>
-                      <th>數值</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.map((v, i) => (
-                      <tr key={i}>
-                        <td>{addr + i}</td>
-                        <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
-                          {fmt==='hex' ? ('0x' + v.toString(16).toUpperCase()) : v}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
-                {result.map(v => fmt==='hex' ? ('0x' + v.toString(16).toUpperCase()) : String(v)).join(', ')}
-              </pre>
+            {selected && (
+              <div className="text-muted">目前狀態：{selectedHost?.connected ? '已連線' : '未連線'}，站號：{selectedHost?.unitId ?? '—'}</div>
             )}
+            <h4 style={{ margin: '4px 0', color: '#111' }}>讀取參數</h4>
+            <div className="form__grid">
+              <div className="form-group">
+                <label>起始位址</label>
+                <input type="number" value={addr} onChange={e => setAddr(Number(e.target.value))} />
+                <div className="hint">對應 function code 0x03 的起始位址</div>
+              </div>
+              <div className="form-group">
+                <label>讀取長度</label>
+                <input type="number" value={len} onChange={e => setLen(Number(e.target.value))} />
+                <div className="hint">一次讀取的 registers 數量</div>
+              </div>
+            </div>
+            <div className="form__actions">
+              <button className="btn" onClick={doRead} disabled={loading || !selected || !selectedHost?.connected}>讀取</button>
+            </div>
+          </div>
+        </div>
+
+        {/* 右欄：結果（表格） */}
+        <div className="stack">
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, color: '#111' }}>讀取結果</h3>
+            <div className="row" style={{ gap: 6 }}>
+              <button className={`btn btn--sm ${fmt==='hex' ? '' : 'btn--outline'}`} onClick={() => setFmt('hex')} disabled={!latest}>十六進位</button>
+              <button className={`btn btn--sm ${fmt==='dec' ? '' : 'btn--outline'}`} onClick={() => setFmt('dec')} disabled={!latest}>十進位</button>
+              <button className={`btn btn--sm ${fmt==='oct' ? '' : 'btn--outline'}`} onClick={() => setFmt('oct')} disabled={!latest}>八進位</button>
+              <button className={`btn btn--sm ${fmt==='bin' ? '' : 'btn--outline'}`} onClick={() => setFmt('bin')} disabled={!latest}>二進位</button>
+              <button className="btn btn--sm btn--outline" onClick={copyLatest} disabled={!latest}>複製</button>
+            </div>
+          </div>
+          <div className="card" style={{ maxHeight: 420, overflow: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ width: 160 }}>時間</th>
+                  <th style={{ width: 100 }}>ID</th>
+                  <th style={{ width: 140 }}>IP</th>
+                  <th style={{ width: 80 }}>Port</th>
+                  <th style={{ width: 80 }}>站號</th>
+                  <th>內容</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#777' }}>尚未讀取</td></tr>
+                ) : history.map(item => (
+                  <tr key={item.id}>
+                    <td>{new Date(item.ts).toLocaleString()}</td>
+                    <td>{item.hostId}</td>
+                    <td>{item.ip ?? '—'}</td>
+                    <td>{item.port ?? '—'}</td>
+                    <td>{item.unitId ?? '—'}</td>
+                    <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+                      {item.values.map(v => formatValue(v)).join(', ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -231,13 +249,7 @@ function WriteModal({ open, onClose, hosts, push }: { open: boolean; onClose: ()
   )
 }
 
-function HostsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <Modal open={open} title="主機管理" onClose={onClose} size="lg">
-      <HostsManager showTitle={false} />
-    </Modal>
-  )
-}
+// 已移除「主機管理」按鈕與對應彈窗，改由 HostsPanel 提供
 
 function LogsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { messages } = useMessages()

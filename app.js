@@ -173,11 +173,34 @@ app.get('/api/hosts/status', (req, res) => {
 app.post('/api/hosts/:id/read/holding-registers', async (req, res) => {
     try {
         const { id } = req.params;
-        const { address, length } = req.body || {};
+        const body = req.body || {};
+        const address = Number(body.address);
+        // 兼容不同命名：length/len/count/quantity
+        const length = Number(
+            body.length ?? body.len ?? body.count ?? body.quantity
+        );
+
+        // 驗證目標主機是否存在與連線
+        const item = multiHostManager.hosts.get(id);
+        if (!item) return res.status(404).json({ success: false, message: `找不到主機：${id}` });
+        if (!item.connected || !item.client) return res.status(409).json({ success: false, message: `主機未連線：${id}` });
+
+        // 參數驗證
+        if (!Number.isFinite(address) || address < 0 || address > 65535) {
+            return res.status(400).json({ success: false, message: 'address 需為 0~65535 的整數' });
+        }
+        if (!Number.isFinite(length) || length <= 0 || length > 125) {
+            return res.status(400).json({ success: false, message: 'length 需為 1~125 的整數' });
+        }
+        if (address + length - 1 > 65535) {
+            return res.status(400).json({ success: false, message: 'address + length - 1 不可超過 65535' });
+        }
+
         const data = await multiHostManager.readHoldingRegisters(id, address, length);
         res.json({ success: true, data });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        // 將 modbus 例外視為 502 Bad Gateway，比較貼切且不會誤導為伺服器邏輯錯誤
+        res.status(502).json({ success: false, message: error.message || '讀取失敗' });
     }
 });
 

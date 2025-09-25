@@ -4,21 +4,42 @@ import Navbar from './components/Navbar'
 import { MessagesProvider } from './contexts/MessagesContext'
 
 function App() {
-  const [message, setMessage] = useState('載入中...')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
-    setMessage('歡迎使用 Modbus Tool (React)')
+    const handler = (e: any) => setSelectedIds(e?.detail?.ids || [])
+    window.addEventListener('hosts:selected', handler as any)
+    return () => window.removeEventListener('hosts:selected', handler as any)
   }, [])
+
+  const connectClick = () => {
+    if (selectedIds.length > 0) {
+      window.dispatchEvent(new CustomEvent('hosts:connect-batch', { detail: { ids: selectedIds } }))
+    } else {
+      window.dispatchEvent(new Event('hosts:connect-all'))
+    }
+  }
+  const disconnectClick = () => {
+    if (selectedIds.length > 0) {
+      window.dispatchEvent(new CustomEvent('hosts:disconnect-batch', { detail: { ids: selectedIds } }))
+    } else {
+      window.dispatchEvent(new Event('hosts:disconnect-all'))
+    }
+  }
 
   return (
     <MessagesProvider>
       <Navbar />
       <div className="app-container">
-        <header className="app-header">
-          <h1>Modbus TCP 工具</h1>
+        <header className="app-header" style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'space-between', gap: 12 }}>
+          <h1 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>Modbus TCP/IP 目前主機連線狀態</h1>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={connectClick}>{selectedIds.length > 0 ? '批量連線' : '全部連線'}</button>
+            <button className="btn" onClick={disconnectClick}>{selectedIds.length > 0 ? '批量斷線' : '全部斷線'}</button>
+            <button className="btn" style={{ alignSelf: 'stretch', height: '100%' }} onClick={() => window.dispatchEvent(new Event('hosts:add'))}>新增主機</button>
+          </div>
         </header>
         <main className="app-main">
-          <div className="card"><p>{message}</p></div>
           <HostsPanel />
         </main>
       </div>

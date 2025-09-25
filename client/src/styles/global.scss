@@ -1,5 +1,12 @@
 $primary: #667eea;
 $accent: #764ba2;
+// Semantic colors for icon variants
+$success: #2e7d32;
+$success-hover: #27672b;
+$warn: #f59e0b;
+$warn-hover: #d97706;
+$danger: #d32f2f;
+$danger-hover: #b32626;
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
@@ -72,6 +79,25 @@ body {
 .table tbody td { padding: 12px; border-bottom: 1px solid #eef0f3; font-size: 14px; }
 .table tbody tr:hover { background: #fafbfc; }
 .table .col-actions { width: 260px; }
+
+/* ===== Icon-only buttons (line icons, no outer border) ===== */
+.icon-btn { background: transparent; border: none; padding: 6px; border-radius: 6px; cursor: pointer; color: #555; display: inline-flex; align-items: center; justify-content: center; transition: color .15s ease, background-color .15s ease, transform .05s ease; }
+.icon-btn:hover { background: #f3f4f6; color: $primary; }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+.icon-btn--sm { padding: 4px; }
+.icon-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+/* Variants */
+.icon-btn--primary { color: $primary; }
+.icon-btn--success { color: $success; }
+.icon-btn--warn { color: $warn; }
+.icon-btn--danger { color: $danger; }
+
+.icon-btn--primary:hover { color: darken($primary, 5%); }
+.icon-btn--success:hover { color: $success-hover; }
+.icon-btn--warn:hover { color: $warn-hover; }
+.icon-btn--danger:hover { color: $danger-hover; }
 
 /* ===== Badges ===== */
 .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
