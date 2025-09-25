@@ -9,8 +9,11 @@ export function useHosts(options?: { pollMs?: number }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
+  const inFlightRef = useRef(false)
 
   async function refresh() {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     try {
       setLoading(true)
       setError(null)
@@ -20,6 +23,7 @@ export function useHosts(options?: { pollMs?: number }) {
     } catch (e: any) {
       setError(e.message || String(e))
     } finally {
+      inFlightRef.current = false
       setLoading(false)
     }
   }
@@ -27,13 +31,19 @@ export function useHosts(options?: { pollMs?: number }) {
   useEffect(() => {
     // 立即讀取一次
     refresh()
+    // 監聽主機狀態異動事件，立即刷新（由 HostsManager 發出）
+    const onChanged = () => { refresh() }
+    window.addEventListener('hosts:changed', onChanged as any)
     // 啟用輪詢（若指定）
     if (options?.pollMs && options.pollMs > 0) {
       const id = window.setInterval(refresh, options.pollMs)
       timerRef.current = id
-      return () => { if (timerRef.current) window.clearInterval(timerRef.current) }
+      return () => {
+        window.removeEventListener('hosts:changed', onChanged as any)
+        if (timerRef.current) window.clearInterval(timerRef.current)
+      }
     }
-    return
+    return () => { window.removeEventListener('hosts:changed', onChanged as any) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options?.pollMs])
 

@@ -39,6 +39,7 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
       push('success', `已儲存 ${form.id}`)
       setForm({ id: '', ip: '', port: 502, unitId: 1 })
       await refresh()
+      window.dispatchEvent(new Event('hosts:changed'))
     } catch (e: any) { push('error', e.message || String(e)) } finally { setLoading(false) }
   }
 
@@ -48,6 +49,7 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
       await deleteHost(id)
       push('success', `已刪除 ${id}`)
       await refresh()
+      window.dispatchEvent(new Event('hosts:changed'))
     } catch (e: any) { push('error', e.message || String(e)) } finally { setLoading(false) }
   }
 
@@ -57,6 +59,7 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
       const r = await connectHost({ id, ip, port, unitId })
       if (!r.success) throw new Error(r.message)
       await refresh()
+      window.dispatchEvent(new Event('hosts:changed'))
     } catch (e: any) { push('error', e.message || String(e)) } finally { setLoading(false) }
   }
 
@@ -66,11 +69,12 @@ export default function HostsManager({ showTitle = true }: { showTitle?: boolean
       const r = await disconnectHost(id)
       if (!('success' in r) || !r.success) throw new Error((r as any).message || '失敗')
       await refresh()
+      window.dispatchEvent(new Event('hosts:changed'))
     } catch (e: any) { push('error', e.message || String(e)) } finally { setLoading(false) }
   }
 
-  async function onConnectAll() { setLoading(true); try { await connectAll(); await refresh() } catch (e:any){ push('error', String(e)) } finally { setLoading(false) } }
-  async function onDisconnectAll() { setLoading(true); try { await disconnectAll(); await refresh() } catch (e:any){ push('error', String(e)) } finally { setLoading(false) } }
+  async function onConnectAll() { setLoading(true); try { await connectAll(); await refresh(); window.dispatchEvent(new Event('hosts:changed')) } catch (e:any){ push('error', String(e)) } finally { setLoading(false) } }
+  async function onDisconnectAll() { setLoading(true); try { await disconnectAll(); await refresh(); window.dispatchEvent(new Event('hosts:changed')) } catch (e:any){ push('error', String(e)) } finally { setLoading(false) } }
 
   return (
     <div className="container" style={{ padding: 16 }}>

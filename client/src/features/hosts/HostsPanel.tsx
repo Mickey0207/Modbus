@@ -1,7 +1,7 @@
 import { useHosts } from './useHosts'
 
 export default function HostsPanel() {
-  const { hosts, loading, error, refresh } = useHosts()
+  const { hosts, loading, error, refresh } = useHosts({ pollMs: 2000 })
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

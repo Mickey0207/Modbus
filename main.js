@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const UI_MODE = process.env.UI_MODE || 'server'; // 'server' | 'vite'
 
 // 開發模式下啟用熱重載
 if (process.env.NODE_ENV === 'development') {
@@ -40,17 +41,23 @@ function createWindow() {
     Menu.setApplicationMenu(null);
 
     // 載入應用程式
-    // 若你想讓 Electron 在開發時直接開 Vite 前端，可改為下列：
-    // mainWindow.loadURL(cfg?.client?.devUrl || 'http://localhost:5173')
-    // 目前維持載入本地 Express 提供的頁面（單一連接埠，API 於 /api）
-    if (server) {
+    // 預設載入內嵌 Express 的單一連接埠（/api 同源）。
+    // 如需在開發時直接載入 Vite（HMR），可設 UI_MODE=vite 並確保前端 dev server 已啟動。
+    if (UI_MODE === 'vite' && process.env.NODE_ENV === 'development') {
+        const devUrl = process.env.DEV_URL || 'http://localhost:5173';
+        console.log('[Electron] UI_MODE=vite -> loadURL:', devUrl);
+        mainWindow.loadURL(devUrl);
+    } else if (server) {
         const addressInfo = server.address();
         const port = typeof addressInfo === 'object' ? addressInfo.port : 0;
-        mainWindow.loadURL(`http://localhost:${port}`);
+        const url = `http://localhost:${port}`;
+        console.log('[Electron] UI_MODE=server -> loadURL:', url);
+        mainWindow.loadURL(url);
     } else {
         // 後端尚未啟動，退回載入本地靜態頁（若存在）
         const fallback = path.join(__dirname, 'public', 'index.html');
         if (fs.existsSync(fallback)) {
+            console.log('[Electron] server not ready, loadFile:', fallback);
             mainWindow.loadFile(fallback);
         }
     }

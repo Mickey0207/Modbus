@@ -1,53 +1,52 @@
 # Modbus TCP 工具
 
-一個基於網頁的 Modbus TCP 客戶端工具，提供直觀的操作介面來與 Modbus TCP 設備通訊。
+一個基於網頁的 Modbus TCP 客戶端工具。
 
-## 重構中的新結構（React + SCSS）
+## Electron
 
-- server/: 模組化 Express API（single/multi-host）。
-- client/: React + Vite 前端（單一全域 SCSS）。
-- public/: 既有的舊版網頁（仍可使用）。
+- 開發預設採同源單埠；如需前端 HMR，可改用 Vite 模式。
+- 打包後維持同源單埠，後端掛載於 /api。
 
-### 快速開始（Web 開發）
+## 指令速查（Windows PowerShell）
 
-1. 安裝 client 依賴
-  npm install --prefix ./client
-2. 啟動後端
-  npm run server:dev
-3. 啟動前端
-  npm run client
-或一次啟動（同時開啟前後端）
-  npm run web:dev
+預設開發流程（瀏覽器開啟）
 
-預設連接埠：前端 5173，後端 5000。
+```powershell
+# 同時啟動後端與前端
+npm run web:dev
+```
 
-### 設定檔（根目錄 modbus.config.json）
+Electron 開發（同源，單一埠，推薦）
 
-示例：
+```powershell
+npm run electron-dev
+# 如需改埠：
+npm run electron-dev:5001
+```
 
-{
-  "server": { "port": 5000 },
-  "client": { "devUrl": "http://localhost:5173" },
-  "hosts": [
-    { "id": "PLC-A", "ip": "192.168.1.10", "port": 502, "unitId": 1 },
-    { "id": "PLC-B", "ip": "192.168.1.11", "port": 502, "unitId": 1 }
-  ]
-}
+Electron 開發（前端 HMR）
 
-說明：
-- server.port：後端 Express 監聽埠（server/src/index.js 與 Electron main.js 均會讀取）
-- client.devUrl：開發時若要讓 Electron 直接載入 Vite 前端，可改 main.js 對應行（已標註）
-- hosts：預載入的主機清單（只建立於記憶體，不會自動連線）
+```powershell
+# 先啟前端（Vite HMR，預設 5000）
+npm run client
+# 再啟 Electron（載入前端，後端由 Electron 內嵌啟動）
+npm run electron-dev:vite
+```
 
-### 舊版 Electron
+打包應用程式（Electron）
 
-- 開發模式
-  npm run electron-dev
-- 一般模式
-  npm run electron
+```powershell
+npm run build-win   # Windows
+npm run build-mac   # macOS
+npm run build-linux # Linux
+```
 
-### 打包應用程式（Electron）
+修復 better-sqlite3 原生模組（版本不相容時）
 
-  npm run build-win    # Windows
-  npm run build-mac    # macOS
-  npm run build-linux  # Linux
+```powershell
+# 給 web:dev（Node 環境）
+npm run rebuild:node
+
+# 給 Electron（針對目前安裝的 Electron 版本重建原生模組）
+npm run rebuild:electron
+```

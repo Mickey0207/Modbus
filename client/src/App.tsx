@@ -16,7 +16,6 @@ function App() {
       <div className="app-container">
         <header className="app-header">
           <h1>Modbus TCP 工具</h1>
-          <p className="subtitle">React + SCSS 版本（開發中）</p>
         </header>
         <main className="app-main">
           <div className="card"><p>{message}</p></div>
