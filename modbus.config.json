@@ -1,0 +1,10 @@
+{
+  "server": {
+    "port": 5001
+  },
+  "client": {
+    "devUrl": "http://localhost:5000"
+  },
+  "hosts": [
+  ]
+}

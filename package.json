@@ -1,0 +1,102 @@
+{
+  "name": "modbus-tcp-tool",
+  "version": "1.0.0",
+  "description": "Modbus TCP 工具 - Electron 桌面應用程式",
+  "main": "main.js",
+  "homepage": ".",
+  "scripts": {
+    "start": "electron .",
+    "dev": "set NODE_ENV=development&& electron .",
+    "server": "node ./server/src/index.js",
+    "server:dev": "nodemon ./server/src/index.js",
+    "dev:server": "npm run server:dev",
+    "client": "npm run dev --prefix ./client",
+    "dev:client": "npm run dev --prefix ./client",
+    "client:build": "npm run build --prefix ./client",
+    "client:preview": "npm run preview --prefix ./client",
+    "web:dev": "concurrently \"npm:server:dev\" \"npm:client\"",
+    "dev:web": "npm run web:dev",
+    "electron": "electron .",
+    "electron-dev": "set NODE_ENV=development&& electron .",
+    "electron-dev:mem": "set NODE_ENV=development&& set DISABLE_DB=1&& electron .",
+    "electron-watch": "nodemon --watch main.js --watch server/src --watch public/ --exec \"electron .\"",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "build-mac": "electron-builder --mac",
+    "build-linux": "electron-builder --linux",
+    "dist": "npm run build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "keywords": [
+    "modbus",
+    "tcp",
+    "industrial",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "cors": "^2.8.5",
+    "drizzle-orm": "^0.36.0",
+    "express": "^4.18.2",
+    "modbus-serial": "^8.0.17",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "drizzle-kit": "^0.31.4",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "electron-reload": "^2.0.0-alpha.1",
+    "nodemon": "^3.0.1",
+    "wait-on": "^9.0.1"
+  },
+  "postinstall": "electron-builder install-app-deps",
+  "build": {
+    "appId": "com.modbus.tcp.tool",
+    "productName": "Modbus TCP 工具",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server/**/*",
+      "client/dist/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server/data",
+        "to": "server/data",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
