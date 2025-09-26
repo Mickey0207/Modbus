@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import Modal from '../ui/shared/Modal'
-import { useMessages } from '../contexts/MessagesContext'
-import { getStatuses } from '../api/hosts/connections'
-import { readHoldingRegisters, writeSingleRegister } from '../api/modbus/operations'
-import Select from '../ui/shared/Select'
-import { useHosts } from '../ui/hosts/useHosts'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Modal from '../shared/Modal'
+import { useMessages } from '../../contexts/MessagesContext'
+import { getStatuses } from '../../api/hosts/connections'
+import { readHoldingRegisters, writeSingleRegister } from '../../api/modbus/operations'
+import Select from '../shared/Select'
+import { useHosts } from '../hosts/useHosts'
 
 type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
@@ -56,6 +56,27 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
   const [chunkSize, setChunkSize] = useState(20)
   const selectedHost = useMemo(() => hosts.find(h => h.id === selected), [hosts, selected])
 
+  // 可調整欄寬（依序：時間、ID、IP、Port、站號、內容）
+  const [colWidths, setColWidths] = useState<number[]>([180, 120, 160, 90, 90, 800])
+  const dragInfo = useRef<{ idx: number; startX: number; startW: number } | null>(null)
+  const MIN_W = 80
+  const startResize = (idx: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragInfo.current = { idx, startX: e.clientX, startW: colWidths[idx] }
+    const onMove = (ev: MouseEvent) => {
+      if (!dragInfo.current) return
+      const dx = ev.clientX - dragInfo.current.startX
+      const next = [...colWidths]
+      next[dragInfo.current.idx] = Math.max(MIN_W, dragInfo.current.startW + dx)
+      setColWidths(next)
+    }
+    const onUp = () => { dragInfo.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+  const totalTableWidth = colWidths.reduce((a, b) => a + b, 0)
+
   useEffect(() => { if (open) { /* 開啟時重置顯示 */ setHistory([]) } }, [open])
 
   const formatValue = (v: number) => (
@@ -101,10 +122,10 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
   }
 
   return (
-    <Modal open={open} onClose={onClose} size="lg">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+    <Modal open={open} onClose={onClose} size="auto" maxWidth="98vw" maxHeight="96vh" fitContent>
+      <div style={{ display: 'grid', gridTemplateColumns: '340px max-content', alignItems: 'start', gap: 16 }}>
         {/* 左欄：設定 */}
-        <div className="stack">
+        <div className="stack" style={{ fontSize: 14 }}>
           <h3 style={{ margin: '0 0 4px', color: '#111' }}>讀取保持暫存器</h3>
           <div className="text-muted">請選擇目標主機、起始位址與讀取長度後執行讀取（Function 0x03）。</div>
           <div className="form">
@@ -113,9 +134,15 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
               <Select
                 value={selected}
                 onChange={setSelected}
-                options={[{ value: '', label: <span className="text-muted">— 請選擇 —</span> }, ...hosts.map(h => ({
+                filterable
+                getLabelText={(opt) => {
+                  const h = hosts.find(x => x.id === opt.value)
+                  return h ? `${h.id} ${h.ip ?? ''} ${h.port ?? ''}` : ''
+                }}
+                options={[{ value: '', label: <span className="text-muted">— 請選擇 —</span>, searchText: '' }, ...hosts.map(h => ({
                   value: h.id,
-                  label: (<span><strong>{h.id}</strong> <span className={`badge ${h.connected ? 'badge--ok' : 'badge--err'}`} style={{ marginLeft: 6 }}>{h.connected ? '已連線' : '未連線'}</span></span>)
+                  label: (<span><strong>{h.id}</strong> <span className={`badge ${h.connected ? 'badge--ok' : 'badge--err'}`} style={{ marginLeft: 6 }}>{h.connected ? '已連線' : '未連線'}</span> <span className="text-muted" style={{ marginLeft: 6 }}>{h.ip}:{h.port}</span></span>),
+                  searchText: `${h.id} ${h.ip ?? ''} ${h.port ?? ''}`
                 }))]}
               />
             </div>
@@ -126,12 +153,12 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
             <div className="form__grid">
               <div className="form-group">
                 <label>起始位址</label>
-                <input type="number" value={addr} onChange={e => setAddr(Number(e.target.value))} />
+                <input type="number" value={addr} onChange={e => setAddr(Number(e.target.value))} style={{ fontSize: 14, padding: '6px 8px' }} />
                 <div className="hint">對應 function code 0x03 的起始位址</div>
               </div>
               <div className="form-group">
                 <label>讀取長度</label>
-                <input type="number" value={len} onChange={e => setLen(Number(e.target.value))} />
+                <input type="number" value={len} onChange={e => setLen(Number(e.target.value))} style={{ fontSize: 14, padding: '6px 8px' }} />
                 <div className="hint">一次讀取的 registers 數量</div>
               </div>
             </div>
@@ -142,7 +169,7 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
         </div>
 
         {/* 右欄：結果（表格） */}
-        <div className="stack">
+  <div className="stack">
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, color: '#111' }}>讀取結果</h3>
             <div className="row" style={{ gap: 6 }}>
@@ -153,16 +180,22 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
               <button className="btn btn--sm btn--outline" onClick={copyLatest} disabled={!latest}>複製</button>
             </div>
           </div>
-          <div className="card" style={{ maxHeight: 420, overflow: 'auto' }}>
-            <table className="table">
+          <div className="card" style={{ maxHeight: '82vh', overflow: 'auto' }}>
+            <table className="table" style={{ width: totalTableWidth, borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 160 }}>時間</th>
-                  <th style={{ width: 100 }}>ID</th>
-                  <th style={{ width: 140 }}>IP</th>
-                  <th style={{ width: 80 }}>Port</th>
-                  <th style={{ width: 80 }}>站號</th>
-                  <th>內容</th>
+                  {['時間','ID','IP','Port','站號','內容'].map((label, i, arr) => (
+                    <th key={label} style={{ position: 'relative', width: colWidths[i], borderRight: i < arr.length - 1 ? '1px solid #e6e6e6' : undefined }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{label}</span>
+                      </div>
+                      <div
+                        onMouseDown={(e) => startResize(i, e)}
+                        style={{ position: 'absolute', right: 0, top: 0, width: 6, height: '100%', cursor: 'col-resize', userSelect: 'none' }}
+                        title="拖曳調整欄寬"
+                      />
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -170,12 +203,12 @@ function ReadModal({ open, onClose, hosts, push }: { open: boolean; onClose: () 
                   <tr><td colSpan={6} style={{ textAlign: 'center', color: '#777' }}>尚未讀取</td></tr>
                 ) : history.map(item => (
                   <tr key={item.id}>
-                    <td>{new Date(item.ts).toLocaleString()}</td>
-                    <td>{item.hostId}</td>
-                    <td>{item.ip ?? '—'}</td>
-                    <td>{item.port ?? '—'}</td>
-                    <td>{item.unitId ?? '—'}</td>
-                    <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+                    <td style={{ width: colWidths[0], borderRight: '1px solid #f0f0f0' }}>{new Date(item.ts).toLocaleString()}</td>
+                    <td style={{ width: colWidths[1], borderRight: '1px solid #f0f0f0' }}>{item.hostId}</td>
+                    <td style={{ width: colWidths[2], borderRight: '1px solid #f0f0f0' }}>{item.ip ?? '—'}</td>
+                    <td style={{ width: colWidths[3], borderRight: '1px solid #f0f0f0' }}>{item.port ?? '—'}</td>
+                    <td style={{ width: colWidths[4], borderRight: '1px solid #f0f0f0' }}>{item.unitId ?? '—'}</td>
+                    <td style={{ width: colWidths[5], whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
                       {item.values.map(v => formatValue(v)).join(', ')}
                     </td>
                   </tr>

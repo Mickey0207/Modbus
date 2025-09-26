@@ -1,9 +1,10 @@
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
-const { drizzle } = require('drizzle-orm/better-sqlite3');
 
-// 在 Electron 打包環境下，將 DB 存放到使用者可寫入的 userData 目錄
+/**
+ * 資料庫配置
+ * 在 Electron 打包環境下，將 DB 存放到使用者可寫入的 userData 目錄
+ */
 function resolveDbPath() {
 	try {
 		// 檢測是否在 Electron 主程序
@@ -19,11 +20,17 @@ function resolveDbPath() {
 	return path.join(__dirname, '..', '..', 'data', 'modbus.sqlite');
 }
 
-const dbPath = resolveDbPath();
-const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+/**
+ * 確保資料庫目錄存在
+ */
+function ensureDbDirectory(dbPath) {
+	const dataDir = path.dirname(dbPath);
+	if (!fs.existsSync(dataDir)) {
+		fs.mkdirSync(dataDir, { recursive: true });
+	}
+}
 
-const sqlite = new Database(dbPath);
-const db = drizzle(sqlite);
-
-module.exports = { db, sqlite, dbPath };
+module.exports = {
+	resolveDbPath,
+	ensureDbDirectory
+};

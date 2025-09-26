@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { get } from '../../lib/api'
+import { get } from '../../api/shared/http'
 
 export interface HostStatus { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 

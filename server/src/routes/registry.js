@@ -1,6 +1,6 @@
 const express = require('express');
 
-module.exports = function createHostRegistryRoutes(multi, sqlite) {
+module.exports = function createRegistryRoutes(multi, sqlite) {
   const router = express.Router();
 
   // 列出所有已註冊 host（來源 DB + 目前記憶體）

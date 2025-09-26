@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 5173"
+    "preview": "vite preview --port 5173",
+    "web:dev": "npm run web:dev --prefix ..",
+    "server:dev": "npm run server:dev --prefix .."
   },
   "dependencies": {
     "modbus-tcp-tool": "file:..",

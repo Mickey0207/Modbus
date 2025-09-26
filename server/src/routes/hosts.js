@@ -1,6 +1,6 @@
 const express = require('express');
 
-module.exports = function createMultiHostRoutes(multiHostManager) {
+module.exports = function createHostsRoutes(multiHostManager) {
     const router = express.Router();
 
     router.post('/connect', async (req, res) => {

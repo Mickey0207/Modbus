@@ -1,4 +1,4 @@
-import { get, post } from '../../lib/api'
+import { get, post } from '../shared/http'
 
 export type HostConfig = { id: string; ip: string; port: number; unitId: number }
 

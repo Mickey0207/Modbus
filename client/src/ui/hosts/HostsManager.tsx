@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listRegistry, upsertHost, deleteHost, connectAll, disconnectAll } from './registryApi'
-import { connectHost, disconnectHost, getStatuses } from './api'
+import { listRegistry, upsertHost, deleteHost, connectAll, disconnectAll } from '../../api/hosts/registry'
+import { connectHost, disconnectHost } from '../../api/hosts/connections'
+import { getStatuses } from '../../api/hosts/connections'
 import { useMessages } from '../../contexts/MessagesContext'
 
 export default function HostsManager({ showTitle = true, showList = true, initial }: { showTitle?: boolean; showList?: boolean; initial?: { id: string; ip: string; port: number; unitId: number } }) {

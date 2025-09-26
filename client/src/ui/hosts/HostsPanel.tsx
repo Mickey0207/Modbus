@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useHosts } from './useHosts'
-import Modal from '../../components/Modal'
+import Modal from '../shared/Modal'
 import HostsManager from './HostsManager'
-import { connectHost, disconnectHost } from './api'
+import { connectHost, disconnectHost } from '../../api/hosts/connections'
 
 type SortKey = 'id' | 'ip' | 'port' | 'unitId' | 'connected'
 
@@ -70,9 +70,9 @@ export default function HostsPanel() {
   }
 
   const batchDisconnect = async (ids: string[]) => {
-    const toDisconnect = hosts.filter(h => ids.includes(h.id) && h.connected)
-    if (toDisconnect.length === 0) return
-    await Promise.allSettled(toDisconnect.map(h => disconnectHost(h.id)))
+    const toDisconnected = hosts.filter(h => ids.includes(h.id) && h.connected)
+    if (toDisconnected.length === 0) return
+    await Promise.allSettled(toDisconnected.map(h => disconnectHost(h.id)))
     window.dispatchEvent(new Event('hosts:changed'))
   }
 
@@ -218,4 +218,4 @@ export default function HostsPanel() {
       </Modal>
     </div>
   )
-} 
+}

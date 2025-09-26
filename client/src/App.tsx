@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import HostsPanel from './features/hosts/HostsPanel'
-import Navbar from './components/Navbar'
+import HostsPanel from './ui/hosts/HostsPanel'
+import Navbar from './ui/layout/Navbar'
 import { MessagesProvider } from './contexts/MessagesContext'
 
 function App() {

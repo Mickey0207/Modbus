@@ -1,16 +1,16 @@
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const { MultiHostModbusManager } = require('./core/modbusMulti');
-const createMultiHostRoutes = require('./api/multiHostRoutes');
-const createHostRegistryRoutes = require('./api/hostRegistryRoutes');
+const { MultiHostModbusManager } = require('./services/modbus');
+const createHostsRoutes = require('./routes/hosts');
+const createRegistryRoutes = require('./routes/registry');
 // DB（可透過環境變數關閉）
 let sqlite = null;
 if (process.env.DISABLE_DB === '1') {
     console.warn('已停用 DB（DISABLE_DB=1），將以記憶體模式運作');
 } else {
     try {
-        ({ sqlite } = require('./db/client'));
+        ({ sqlite } = require('./models/database'));
     } catch (e) {
         console.warn('DB 初始化尚未完成，將以記憶體模式運作:', e?.message || e);
     }
@@ -68,8 +68,8 @@ function createServer() {
             console.warn('讀取 DB hosts 失敗:', e?.message || e);
         }
     }
-    app.use('/api/hosts', createMultiHostRoutes(multi));
-    app.use('/api/registry', createHostRegistryRoutes(multi, sqlite));
+    app.use('/api/hosts', createHostsRoutes(multi));
+    app.use('/api/registry', createRegistryRoutes(multi, sqlite));
 
     app.get('*', (req, res) => {
         if (require('fs').existsSync(clientDist)) {
