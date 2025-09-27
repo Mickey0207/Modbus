@@ -1,11 +1,13 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import SiderGroup from './SiderGroup'
 import { IconGauge, IconGrid, IconLink, IconUsb } from '@/components/icons'
-import { Modal, Button, Badge } from '@/components/index'
-import ReadPanel from '@/layout/read/ReadPage'
-import WritePanel from '@/layout/write/WritePage'
-import SystemPanel from '@/layout/system/SystemPage'
+import { Button } from '@/components/index'
+import useHosts from '@/hooks/useHosts'
+import { useMessages } from '@/api/contexts/MessagesContext'
+import ReadHoldingRegistersModal from '@/layout/modals/ReadHoldingRegistersModal'
+import WriteSingleRegisterModal from '@/layout/modals/WriteSingleRegisterModal'
+import SystemLogsModal from '@/layout/modals/SystemLogsModal'
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -15,6 +17,9 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
   const [readOpen, setReadOpen] = useState(false)
   const [writeOpen, setWriteOpen] = useState(false)
   const [sysOpen, setSysOpen] = useState(false)
+  const { hosts } = useHosts({ pollMs: 2000 })
+  const { push } = useMessages()
+  const connectedCount = useMemo(() => hosts.filter(h => h.connected).length, [hosts])
 
   return (
     <div className="app-shell">
@@ -41,10 +46,10 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         <header className="topbar">
           <div className="topbar-left">
             <div className="topbar-brand">Modbus TCP & 485</div>
-            <div className="topbar-status">主機：0 / 0 已連線</div>
+            <div className="topbar-status">主機：{connectedCount} / {hosts.length} 已連線</div>
             <div className="btn-group">
-              <Button className="btn--sm btn--success" onClick={()=>setReadOpen(true)}>讀取</Button>
-              <Button className="btn--sm btn--outline" onClick={()=>setWriteOpen(true)}>寫入</Button>
+              <Button className="btn--sm btn--outline" onClick={()=>setReadOpen(true)}>讀取 Master</Button>
+              <Button className="btn--sm btn--outline" onClick={()=>setWriteOpen(true)}>寫入 Master</Button>
             </div>
           </div>
           <div className="topbar-right">
@@ -57,15 +62,9 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
           {children}
         </section>
         {/* Popout modals */}
-        <Modal isOpen={readOpen} onClose={()=>setReadOpen(false)} title="讀取">
-          <ReadPanel />
-        </Modal>
-        <Modal isOpen={writeOpen} onClose={()=>setWriteOpen(false)} title="寫入">
-          <WritePanel />
-        </Modal>
-        <Modal isOpen={sysOpen} onClose={()=>setSysOpen(false)} title="系統資訊">
-          <SystemPanel />
-        </Modal>
+        <ReadHoldingRegistersModal open={readOpen} onClose={()=>setReadOpen(false)} hosts={hosts} push={push} />
+        <WriteSingleRegisterModal open={writeOpen} onClose={()=>setWriteOpen(false)} hosts={hosts} push={push} />
+        <SystemLogsModal open={sysOpen} onClose={()=>setSysOpen(false)} />
       </main>
     </div>
   )

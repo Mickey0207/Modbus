@@ -74,7 +74,8 @@ body { margin: 0; color: var(--text); background: radial-gradient(1200px 800px a
 .input--sm { padding: 4px 8px; font-size: 12px; }
 
 /* 通用數字輸入（隱藏上下按鈕，支援滾輪） */
-.num-input { background: #0b1119; color: var(--text); border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; outline: none; font-variant-numeric: tabular-nums; }
+.num-input { background: #0b1119; color: var(--text); border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; outline: none; font-variant-numeric: tabular-nums; height: 34px; }
+.num-input.input--sm { height: 26px; }
 .num-input:focus { border-color: #255a86; box-shadow: 0 0 0 2px rgba(55,148,255,.12); }
 .num-input::-webkit-outer-spin-button,
 .num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -133,20 +134,25 @@ body { margin: 0; color: var(--text); background: radial-gradient(1200px 800px a
 
 /* Select component */
 .select { position: relative; display: inline-block; }
-.select .select-trigger { background: rgba(11,17,25,.6); color: #dce7f3; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 28px 6px 10px; font-size: 0.95rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.select .select-trigger { background: rgba(11,17,25,.6); color: #dce7f3; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 28px 6px 10px; font-size: 0.95rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; position: relative; z-index: 3; height: 34px; }
 .select .select-trigger:hover { border-color: rgba(255,255,255,.2); }
 .select .select-trigger:focus { outline: none; border-color: rgba(110,231,183,.6); box-shadow: 0 0 0 3px rgba(110,231,183,.15); }
 .select .select-value.placeholder { color: #8ca2b8; }
 .select .select-caret { opacity: .9; }
 .select.open .select-trigger { border-color: rgba(110,231,183,.6); box-shadow: 0 0 0 3px rgba(110,231,183,.15); }
 .select.disabled .select-trigger { opacity: .5; cursor: not-allowed; }
-.select.sm .select-trigger { padding: 4px 24px 4px 8px; font-size: 0.9rem; }
+.select.sm .select-trigger { padding: 4px 24px 4px 8px; font-size: 0.9rem; height: 26px; }
 
-.select .select-list { position: absolute; top: calc(100% + 6px); left: 0; min-width: 200px; background: rgba(12, 18, 26, .85); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 6px; z-index: 20; }
+.select.open { z-index: 2000; }
+.select .select-list { position: absolute; top: calc(100% + 6px); left: 0; min-width: 200px; background: rgba(12, 18, 26, .85); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 6px; z-index: 2001; max-height: 260px; overflow-y: auto; }
 .select .select-option { display: grid; grid-template-columns: 16px 1fr; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: #dce7f3; }
 .select .select-option:hover, .select .select-option.highlight { background: rgba(255,255,255,.06); }
 .select .select-option.active { background: rgba(110,231,183,.18); border: 1px solid rgba(110,231,183,.35); }
 .select .select-option .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(110,231,183,.85); box-shadow: 0 0 8px rgba(110,231,183,.45); }
+
+/* wide dropdown for long labels */
+.select.wide .select-list { min-width: 520px; }
+.select.wide .select-option .label { white-space: nowrap; }
 
 /* DIM type: light + number input at right side */
 .dim-group { display: grid; grid-template-columns: repeat(4, max-content); gap: 12px 16px; align-items: center; }

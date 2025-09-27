@@ -6,6 +6,7 @@
     "noEmit": true,
     "composite": false,
     "paths": {
+      "@/components": ["src/components/index.ts"],
       "@/components/*": ["src/components/*"],
       "@/modules/*": ["src/modules/*"],
       "@/layout/*": ["src/layout/*"],
