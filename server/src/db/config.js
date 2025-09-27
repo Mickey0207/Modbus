@@ -17,7 +17,17 @@ function resolveDbPath() {
     }
   } catch {}
   // 一般 Node 環境（開發模式）
-  return path.join(__dirname, '..', 'data', 'modbus.sqlite');
+  // 與 drizzle.config.ts、打包 extraResources 對齊：使用 server/data/modbus.sqlite
+  const preferred = path.join(__dirname, '..', '..', 'data', 'modbus.sqlite');
+  const legacy = path.join(__dirname, '..', 'data', 'modbus.sqlite'); // 舊路徑：server/src/data
+  try {
+    // 若舊檔已存在且新路徑不存在，沿用舊檔避免資料遺失
+    if (!fs.existsSync(preferred) && fs.existsSync(legacy)) {
+      console.warn('[db] 偵測到舊版 DB 路徑 server/src/data/modbus.sqlite，將暫時沿用該檔案。建議將檔案移到 server/data 以統一路徑。');
+      return legacy;
+    }
+  } catch {}
+  return preferred;
 }
 
 /**

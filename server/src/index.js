@@ -2,6 +2,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { MultiHostModbusManager } = require('./core/modbus/manager');
+const { resolveDbPath } = require('./db/config');
 const createHostsRoutes = require('./api/hosts/routes');
 const createRegistryRoutes = require('./api/hosts/registry.routes');
 const createPortScanRoutes = require('./api/network/portscan.routes');
@@ -33,10 +34,11 @@ function createServer() {
 
     app.use(cors());
     app.use(express.json());
-    const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+    // 服務前端靜態檔（預設 fronted/dist，若不存在則退回 public）
+    const frontedDist = path.join(__dirname, '..', '..', 'fronted', 'dist');
     const legacyPublic = path.join(__dirname, '..', '..', 'public');
-    if (require('fs').existsSync(clientDist)) {
-        app.use(express.static(clientDist));
+    if (require('fs').existsSync(frontedDist)) {
+        app.use(express.static(frontedDist));
     } else {
         app.use(express.static(legacyPublic));
     }
@@ -77,9 +79,25 @@ function createServer() {
     app.use('/api/serialspy', createSerialSpyRoutes());
     app.use('/api/tcpprobe', createTcpProbeRoutes());
 
+    // 健康檢查與 DB 狀態
+    app.get('/api/health', (req, res) => {
+        const dbPath = resolveDbPath();
+        const dbExists = require('fs').existsSync(dbPath);
+        res.json({
+            ok: true,
+            port: PORT,
+            db: {
+                enabled: !!sqlite,
+                path: dbPath,
+                exists: dbExists
+            },
+            hostsCount: multi.hosts.size
+        });
+    });
+
     app.get('*', (req, res) => {
-        if (require('fs').existsSync(clientDist)) {
-            res.sendFile(path.join(clientDist, 'index.html'));
+        if (require('fs').existsSync(frontedDist)) {
+            res.sendFile(path.join(frontedDist, 'index.html'));
         } else {
             res.sendFile(path.join(legacyPublic, 'index.html'));
         }

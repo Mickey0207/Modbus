@@ -6,6 +6,8 @@
     "client",
     "client/**",
     "client/dist/**",
+    "fronted/**",
+    "fronted/dist/**",
     "public/**",
     "node_modules/**",
     ".git/**",

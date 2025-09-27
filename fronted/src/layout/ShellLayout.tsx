@@ -7,6 +7,8 @@ import useHosts from '@/hooks/useHosts'
 import { useMessages } from '@/api/contexts/MessagesContext'
 import ReadHoldingRegistersModal from '@/layout/modals/ReadHoldingRegistersModal'
 import WriteSingleRegisterModal from '@/layout/modals/WriteSingleRegisterModal'
+import ReadHoldingRegistersSlaveModal from '@/layout/modals/ReadHoldingRegistersSlaveModal'
+import WriteSingleRegisterSlaveModal from '@/layout/modals/WriteSingleRegisterSlaveModal'
 import SystemLogsModal from '@/layout/modals/SystemLogsModal'
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +19,8 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
   const [readOpen, setReadOpen] = useState(false)
   const [writeOpen, setWriteOpen] = useState(false)
   const [sysOpen, setSysOpen] = useState(false)
+  const [readSlaveOpen, setReadSlaveOpen] = useState(false)
+  const [writeSlaveOpen, setWriteSlaveOpen] = useState(false)
   const { hosts } = useHosts({ pollMs: 2000 })
   const { push } = useMessages()
   const connectedCount = useMemo(() => hosts.filter(h => h.connected).length, [hosts])
@@ -50,6 +54,8 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
             <div className="btn-group">
               <Button className="btn--sm btn--outline" onClick={()=>setReadOpen(true)}>讀取 Master</Button>
               <Button className="btn--sm btn--outline" onClick={()=>setWriteOpen(true)}>寫入 Master</Button>
+              <Button className="btn--sm btn--outline" onClick={()=>setReadSlaveOpen(true)}>讀取 Slave</Button>
+              <Button className="btn--sm btn--outline" onClick={()=>setWriteSlaveOpen(true)}>寫入 Slave</Button>
             </div>
           </div>
           <div className="topbar-right">
@@ -62,8 +68,10 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
           {children}
         </section>
         {/* Popout modals */}
-        <ReadHoldingRegistersModal open={readOpen} onClose={()=>setReadOpen(false)} hosts={hosts} push={push} />
-        <WriteSingleRegisterModal open={writeOpen} onClose={()=>setWriteOpen(false)} hosts={hosts} push={push} />
+  <ReadHoldingRegistersModal open={readOpen} onClose={()=>setReadOpen(false)} hosts={hosts} push={push} />
+  <WriteSingleRegisterModal open={writeOpen} onClose={()=>setWriteOpen(false)} hosts={hosts} push={push} />
+  <ReadHoldingRegistersSlaveModal open={readSlaveOpen} onClose={()=>setReadSlaveOpen(false)} hosts={hosts} push={push} />
+  <WriteSingleRegisterSlaveModal open={writeSlaveOpen} onClose={()=>setWriteSlaveOpen(false)} hosts={hosts} push={push} />
         <SystemLogsModal open={sysOpen} onClose={()=>setSysOpen(false)} />
       </main>
     </div>
