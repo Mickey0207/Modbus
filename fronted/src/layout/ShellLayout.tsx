@@ -36,7 +36,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
             icon={<IconGrid />}
             items={[
               { to: '/modbus/port-scan', label: 'TCP/IP 埠掃描', end: true, icon: <IconLink /> },
-              { to: '/modbus/transparent-forward', label: 'TCP/IP 透明轉發', end: true, icon: <IconUsb /> },
+              { to: '/modbus/serial-spy', label: 'RS-485 監聽', end: true, icon: <IconUsb /> },
             ]}
           />
         </nav>

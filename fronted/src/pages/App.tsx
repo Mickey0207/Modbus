@@ -3,7 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import ShellLayout from '@/layout/ShellLayout'
 import MasterSlaveStatus from '@/pages/status/MasterSlaveStatus'
 import TcpIpPortScan from '@/pages/modbus/TcpIpPortScan'
-import TcpIpTransparentForward from '@/pages/modbus/TcpIpTransparentForward'
+// removed Transparent Forward page
+import SerialSpy from '@/pages/modbus/SerialSpy'
 
 export default function App() {
   return (
@@ -12,7 +13,8 @@ export default function App() {
         <Route path="/" element={<Navigate to="/status" replace />} />
         <Route path="/status" element={<MasterSlaveStatus />} />
         <Route path="/modbus/port-scan" element={<TcpIpPortScan />} />
-        <Route path="/modbus/transparent-forward" element={<TcpIpTransparentForward />} />
+  { /* Transparent Forward page removed */ }
+  <Route path="/modbus/serial-spy" element={<SerialSpy />} />
 
         <Route path="*" element={<Navigate to="/status" replace />} />
       </Routes>
