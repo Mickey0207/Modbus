@@ -8,7 +8,7 @@
     "start": "electron .",
     "dev": "set NODE_ENV=development&& electron .",
     "server": "node ./server/src/index.js",
-    "server:dev": "nodemon ./server/src/index.js",
+  "server:dev": "nodemon",
     "dev:server": "npm run server:dev",
     "client": "npm run dev --prefix ./client",
     "dev:client": "npm run dev --prefix ./client",

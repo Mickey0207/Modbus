@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "noEmit": true,
+    "composite": false,
+    "paths": {
+      "@/components/*": ["src/components/*"],
+      "@/modules/*": ["src/modules/*"],
+      "@/layout/*": ["src/layout/*"],
+      "@/styles/*": ["src/styles/*"],
+      "@/pages/*": ["src/pages/*"],
+      "@/api/*": ["src/api/*"],
+      "@/hooks/*": ["src/hooks/*"]
+    }
+  },
+  "include": ["src"]
+}

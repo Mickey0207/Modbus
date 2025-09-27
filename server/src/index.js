@@ -1,16 +1,19 @@
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const { MultiHostModbusManager } = require('./services/modbus');
-const createHostsRoutes = require('./routes/hosts');
-const createRegistryRoutes = require('./routes/registry');
+const { MultiHostModbusManager } = require('./core/modbus/manager');
+const createHostsRoutes = require('./api/hosts/routes');
+const createRegistryRoutes = require('./api/hosts/registry.routes');
+const createPortScanRoutes = require('./api/network/portscan.routes');
+const createSerialSpyRoutes = require('./api/serial/serialspy.routes');
+const createTcpProbeRoutes = require('./api/network/tcpprobe.routes');
 // DB（可透過環境變數關閉）
 let sqlite = null;
 if (process.env.DISABLE_DB === '1') {
     console.warn('已停用 DB（DISABLE_DB=1），將以記憶體模式運作');
 } else {
     try {
-        ({ sqlite } = require('./models/database'));
+    ({ sqlite } = require('./db'));
     } catch (e) {
         console.warn('DB 初始化尚未完成，將以記憶體模式運作:', e?.message || e);
     }
@@ -70,6 +73,9 @@ function createServer() {
     }
     app.use('/api/hosts', createHostsRoutes(multi));
     app.use('/api/registry', createRegistryRoutes(multi, sqlite));
+    app.use('/api/portscan', createPortScanRoutes());
+    app.use('/api/serialspy', createSerialSpyRoutes());
+    app.use('/api/tcpprobe', createTcpProbeRoutes());
 
     app.get('*', (req, res) => {
         if (require('fs').existsSync(clientDist)) {

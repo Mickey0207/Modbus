@@ -1,0 +1,17 @@
+{
+  "watch": [
+    "server/src"
+  ],
+  "ignore": [
+    "client",
+    "client/**",
+    "client/dist/**",
+    "public/**",
+    "node_modules/**",
+    ".git/**",
+    "server/data/**"
+  ],
+  "ext": "js,json",
+  "exec": "node ./server/src/index.js",
+  "delay": "1200"
+}
