@@ -1,12 +1,35 @@
 const express = require('express');
 
-module.exports = function createHostsRoutes(multiHostManager) {
+module.exports = function createHostsRoutes(multiHostManager, sqlite) {
     const router = express.Router();
 
     router.post('/connect', async (req, res) => {
         try {
             const { id, ip, port, unitId } = req.body || {};
             const result = await multiHostManager.connectHost({ id, ip, port, unitId });
+            // persist runtime status to DB if available
+            if (sqlite) {
+                try {
+                    const t = Date.now();
+                    sqlite.exec?.(`CREATE TABLE IF NOT EXISTS host_status (
+                        host_id TEXT PRIMARY KEY,
+                        ip TEXT NOT NULL,
+                        port INTEGER NOT NULL,
+                        unit_id INTEGER NOT NULL,
+                        connected INTEGER,
+                        last_seen INTEGER,
+                        created_at INTEGER
+                    )`);
+                    // 若該 host 尚未存在於 host_status，插入一筆（使用目前參數作為 config）
+                    sqlite.prepare(`INSERT INTO host_status (host_id, ip, port, unit_id, connected, last_seen, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(host_id) DO UPDATE SET ip=excluded.ip, port=excluded.port, unit_id=excluded.unit_id, connected=excluded.connected, last_seen=excluded.last_seen`).run(
+                        id, ip, port, unitId, 1, t, Date.now()
+                    );
+                    // 同步寫回站點主機表（若存在該主機 id）
+                    try { sqlite.prepare(`UPDATE site_sw_hosts SET connected=1, last_seen=? WHERE id=?`).run(t, id); } catch {}
+                } catch {}
+            }
             res.json(result);
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
@@ -17,6 +40,23 @@ module.exports = function createHostsRoutes(multiHostManager) {
         try {
             const { id } = req.body || {};
             const result = await multiHostManager.disconnectHost(id);
+            if (sqlite) {
+                try {
+                    const t = Date.now();
+                    sqlite.exec?.(`CREATE TABLE IF NOT EXISTS host_status (
+                        host_id TEXT PRIMARY KEY,
+                        ip TEXT NOT NULL,
+                        port INTEGER NOT NULL,
+                        unit_id INTEGER NOT NULL,
+                        connected INTEGER,
+                        last_seen INTEGER,
+                        created_at INTEGER
+                    )`);
+                    sqlite.prepare(`UPDATE host_status SET connected=0, last_seen=? WHERE host_id=?`).run(t, id);
+                    // 同步寫回站點主機表（若存在該主機 id）
+                    try { sqlite.prepare(`UPDATE site_sw_hosts SET connected=0, last_seen=? WHERE id=?`).run(t, id); } catch {}
+                } catch {}
+            }
             res.json(result);
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
@@ -24,7 +64,25 @@ module.exports = function createHostsRoutes(multiHostManager) {
     });
 
     router.get('/status', (req, res) => {
-        res.json({ success: true, data: multiHostManager.getStatuses() });
+        try {
+            const live = multiHostManager.getStatuses?.() || []
+            const byId = new Map()
+            for (const h of live) byId.set(h.id, { ...h })
+            if (sqlite) {
+                try {
+                    const rows = sqlite.prepare?.(`SELECT host_id as id, ip, port, unit_id as unitId, connected FROM host_status`)?.all?.() || []
+                    for (const r of rows) {
+                        const cur = byId.get(r.id) || { id: r.id, ip: r.ip, port: r.port, unitId: r.unitId, connected: !!r.connected }
+                        // 以 live 為優先，但若 live 沒有該 host，使用 DB 狀態
+                        if (!byId.has(r.id)) byId.set(r.id, { ...cur })
+                        else byId.set(r.id, { ...cur, ...byId.get(r.id) })
+                    }
+                } catch {}
+            }
+            res.json({ success: true, data: Array.from(byId.values()) })
+        } catch (e) {
+            res.json({ success: true, data: multiHostManager.getStatuses() })
+        }
     });
 
     // 一鍵連線所有已註冊的 hosts（依記憶體中的 config）

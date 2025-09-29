@@ -10,13 +10,16 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5000,
+    // 前端（Vite）開發伺服器埠
+    port: 5001,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        // 開發時將 API 代理到後端（Express）埠
+        target: 'http://localhost:5002',
         changeOrigin: true
       }
     }
   },
-  preview: { port: 5002 }
+  // 前端預覽模式埠
+  preview: { port: 5001 }
 })

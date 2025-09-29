@@ -6,11 +6,40 @@ module.exports = function createRegistryRoutes(multi, sqlite) {
   // 列出所有已註冊 host（來源 DB + 目前記憶體）
   router.get('/', async (req, res) => {
     try {
+      // 若有 DB，優先以 host_status 為主體來源，合併記憶體中的即時連線狀態；
+      // 若無 DB，退回以記憶體（multi.hosts）為主。
+  if (sqlite) {
+        sqlite.exec?.(`CREATE TABLE IF NOT EXISTS host_status (
+          host_id TEXT PRIMARY KEY,
+          ip TEXT NOT NULL,
+          port INTEGER NOT NULL,
+          unit_id INTEGER NOT NULL,
+          connected INTEGER,
+          last_seen INTEGER,
+          created_at INTEGER
+        )`);
+        const rows = sqlite.prepare?.(`SELECT host_id as id, ip, port, unit_id as unitId, connected FROM host_status ORDER BY host_id`)?.all?.() || [];
+        const data = rows.map(r => {
+          const mem = multi.hosts.get(r.id);
+          return {
+            id: r.id,
+            ip: r.ip,
+            port: r.port,
+            unitId: r.unitId,
+            // 以記憶體的即時狀態覆蓋 DB 的 connected 欄位（若存在）
+            connected: mem ? !!mem.connected : !!r.connected,
+          };
+        });
+        // DB-first: 不再補上僅存在於記憶體的 hosts，避免與 DB 手動修改產生重複
+        return res.json({ success: true, data });
+      }
+
+      // 無 DB：維持原行為
       const list = [];
       for (const [id, item] of multi.hosts.entries()) {
         list.push({ id, ...(item?.config || {}), connected: !!item?.connected });
       }
-      res.json({ success: true, data: list });
+      return res.json({ success: true, data: list });
     } catch (e) {
       res.status(500).json({ success: false, message: e.message });
     }
@@ -30,17 +59,20 @@ module.exports = function createRegistryRoutes(multi, sqlite) {
         return res.json({ success: true, message: '已儲存（記憶體）', persisted: false });
       }
 
-      // 有 DB 時持久化
-      sqlite.exec?.(`CREATE TABLE IF NOT EXISTS hosts (
-        id TEXT PRIMARY KEY,
+      // 有 DB 時持久化到 host_status（作為即時配置＋狀態）
+      sqlite.exec?.(`CREATE TABLE IF NOT EXISTS host_status (
+        host_id TEXT PRIMARY KEY,
         ip TEXT NOT NULL,
         port INTEGER NOT NULL,
         unit_id INTEGER NOT NULL,
+        connected INTEGER,
+        last_seen INTEGER,
         created_at INTEGER
       )`);
       const now = Date.now();
-      sqlite.prepare?.(`INSERT INTO hosts (id, ip, port, unit_id, created_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET ip=excluded.ip, port=excluded.port, unit_id=excluded.unit_id`).run(id, ip, port, unitId, now);
+      sqlite.prepare?.(`INSERT INTO host_status (host_id, ip, port, unit_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(host_id) DO UPDATE SET ip=excluded.ip, port=excluded.port, unit_id=excluded.unit_id`).run(id, ip, port, unitId, now);
 
       // 更新記憶體中的清單
       const existing = multi.hosts.get(id);
@@ -64,7 +96,7 @@ module.exports = function createRegistryRoutes(multi, sqlite) {
       }
       multi.hosts.delete(id);
       if (sqlite) {
-        sqlite.prepare?.(`DELETE FROM hosts WHERE id = ?`).run(id);
+        sqlite.prepare?.(`DELETE FROM host_status WHERE host_id = ?`).run(id);
         return res.json({ success: true, message: '已刪除', persisted: true });
       } else {
         return res.json({ success: true, message: '已刪除（記憶體）', persisted: false });

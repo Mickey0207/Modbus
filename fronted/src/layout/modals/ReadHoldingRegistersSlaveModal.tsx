@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Modal, Select, SmartTable, Button, NumberInput } from '@/components'
 import { IconCopy, IconEdit } from '@/components/icons'
 import { readHoldingRegisters } from '@/api/modbus/operations'
+import { useMessages } from '@/api/contexts/MessagesContext'
 
 type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
@@ -13,6 +14,7 @@ export default function ReadHoldingRegistersSlaveModal({ open, onClose, hosts, p
   const [fmt, setFmt] = useState<'hex' | 'dec' | 'oct' | 'bin'>('dec')
   const [history, setHistory] = useState<Array<{ id: string; ts: number; unitId?: number; values: number[]; hostId: string; ip?: string; port?: number; addr: number; len: number; ok: boolean }>>([])
   const selectedHost = useMemo(() => hosts.find(h => h.id === selected), [hosts, selected])
+  const { push: pushMsg } = useMessages()
 
   useEffect(() => { if (open) setHistory([]) }, [open])
 
@@ -34,9 +36,10 @@ export default function ReadHoldingRegistersSlaveModal({ open, onClose, hosts, p
       if (!r.success || !Array.isArray(r.data)) throw new Error('讀取失敗')
       const values = r.data
       setHistory(h => [{ id: (globalThis.crypto as any)?.randomUUID?.() || String(Date.now()), ts: Date.now(), unitId: selectedHost?.unitId, values, hostId: selected, ip: selectedHost?.ip, port: selectedHost?.port, addr: Number(addr), len: Number(len), ok: true }, ...h])
-      push('success', `讀取成功：${selected} @${addr} x${len}`)
+      try { pushMsg({ channel: 'modbusSend', level: 'success', text: `READ 0x03：${selected} @${addr} x${len}`, hostId: selected, action: 'read', ok: true, target: 'host', modbus: { fc: 0x03, address: Number(addr), quantity: Number(len), values } }) } catch {}
     } catch (e: any) {
-      push('error', e?.message ? `讀取失敗：${e.message}` : '讀取失敗')
+      // 改以結構化訊息呈現錯誤
+      try { pushMsg({ channel: 'modbusSend', level: 'error', text: `READ 失敗：${selected} @${addr} x${len}`, hostId: selected, action: 'read', ok: false, target: 'host', modbus: { fc: 0x03, address: Number(addr), quantity: Number(len) } }) } catch {}
       setHistory(h => [{ id: (globalThis.crypto as any)?.randomUUID?.() || String(Date.now()), ts: Date.now(), unitId: selectedHost?.unitId, values: [], hostId: selected, ip: selectedHost?.ip, port: selectedHost?.port, addr: Number(addr), len: Number(len), ok: false }, ...h])
     } finally { setLoading(false) }
   }
@@ -95,7 +98,6 @@ export default function ReadHoldingRegistersSlaveModal({ open, onClose, hosts, p
                 onChange={(v: string)=>setSelected(String(v))}
                 className="wide"
                 options={[
-                  { value: 'DEMO', label: 'DEMO 192.168.0.123:502 已連線' },
                   ...hosts.map(h => ({ value: h.id, label: `${h.id} ${h.ip ?? ''}:${h.port ?? ''} ${h.connected ? '已連線' : '未連線'}` }))
                 ]}
               />

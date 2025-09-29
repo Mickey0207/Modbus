@@ -28,8 +28,8 @@ function resolveLocalDrizzleKit() {
 function runStudio() {
   const localBin = resolveLocalDrizzleKit();
   const cmd = localBin || 'npx';
-  const args = localBin ? ['studio', '--port=5002'] : ['drizzle-kit', 'studio', '--port=5002'];
-  console.log(`{drizzle} Starting Drizzle Studio on port 5002 using ${localBin ? 'local drizzle-kit' : 'npx drizzle-kit'}...`);
+  const args = localBin ? ['studio', '--port=5003'] : ['drizzle-kit', 'studio', '--port=5003'];
+  console.log(`{drizzle} Starting Drizzle Studio on port 5003 using ${localBin ? 'local drizzle-kit' : 'npx drizzle-kit'}...`);
 
   const child = spawn(cmd, args, { stdio: 'inherit', shell: true });
   child.on('exit', (code) => {

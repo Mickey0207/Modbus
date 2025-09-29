@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Modal, Select, Button, NumberInput, SmartTable } from '@/components'
 import { IconCopy, IconEdit } from '@/components/icons'
 import { writeSingleRegister } from '@/api/modbus/operations'
+import { useMessages } from '@/api/contexts/MessagesContext'
 
 type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
@@ -13,6 +14,7 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
   const [value, setValue] = useState(0)
   const [loading, setLoading] = useState(false)
   const [history, setHistory] = useState<History[]>([])
+  const { push: pushMsg } = useMessages()
 
   const selectedHost = useMemo(() => hosts.find(h => h.id === selected), [hosts, selected])
 
@@ -31,9 +33,10 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
       const r = await writeSingleRegister(selected, Number(addr), Number(value))
       const ok = (r as any)?.success !== false
       setHistory(h => [{ id: crypto.randomUUID?.() ?? String(Date.now()), ts: Date.now(), hostId: selected, unitId: selectedHost?.unitId, ip: selectedHost?.ip, port: selectedHost?.port, addr: Number(addr), value: Number(value), ok, message: (r as any)?.message }, ...h])
-      push(ok ? 'success' : 'warning', ok ? `寫入成功：${selected} @${addr} = ${value}` : `寫入可能失敗：${(r as any)?.message ?? '未知'}`)
+      try { pushMsg({ channel: 'modbusSend', level: ok ? 'success' : 'warning', text: `WRITE 0x06：${selected} @${addr} = ${value}`, hostId: selected, action: 'write', ok, target: 'host', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
     } catch (e: any) {
-      push('error', e?.message ? `寫入失敗：${e.message}` : '寫入失敗')
+      // 改以結構化訊息呈現錯誤
+      try { pushMsg({ channel: 'modbusSend', level: 'error', text: `WRITE 失敗：${selected} @${addr} = ${value}`, hostId: selected, action: 'write', ok: false, target: 'host', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
     } finally { setLoading(false) }
   }
 
@@ -81,7 +84,6 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
                 onChange={(v: string)=>setSelected(String(v))}
                 className="wide"
                 options={[
-                  { value: 'DEMO', label: 'DEMO 192.168.0.123:502 已連線' },
                   ...hosts.map(h => ({ value: h.id, label: `${h.id} ${h.ip ?? ''}:${h.port ?? ''} ${h.connected ? '已連線' : '未連線'}` }))
                 ]}
               />

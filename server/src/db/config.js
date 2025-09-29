@@ -19,7 +19,7 @@ function resolveDbPath() {
   // 一般 Node 環境（開發模式）
   // 與 drizzle.config.ts、打包 extraResources 對齊：使用 server/data/modbus.sqlite
   const preferred = path.join(__dirname, '..', '..', 'data', 'modbus.sqlite');
-  const legacy = path.join(__dirname, '..', 'data', 'modbus.sqlite'); // 舊路徑：server/src/data
+  const legacy = path.join(__dirname, '..', 'data', 'modbus.sqlite'); // 舊路徑：server/src/data（僅暫時相容，建議搬移到 server/data）
   try {
     // 若舊檔已存在且新路徑不存在，沿用舊檔避免資料遺失
     if (!fs.existsSync(preferred) && fs.existsSync(legacy)) {
