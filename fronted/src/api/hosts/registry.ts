@@ -1,10 +1,27 @@
-import { get, post } from '@/api/shared/http'
+export type HostConfig = {
+  id: string;
+  ip?: string;
+  port?: number;
+  unitId?: number;
+  name?: string;
+  floor?: string;
+  room?: string;
+  note?: string;
+}
 
-export type HostConfig = { id: string; ip: string; port: number; unitId: number }
+// In-memory stub registry
+const hosts = new Map<string, HostConfig>()
 
-export const listRegistry = () => get<{ success: boolean; data: HostConfig[] }>(`/api/registry`)
-export const upsertHost = (payload: HostConfig) => post<{ success: boolean; message: string }>(`/api/registry`, payload)
-export const deleteHost = (id: string) => fetch(`/api/registry/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(r => r.json())
+export async function upsertHost(h: HostConfig) {
+  hosts.set(h.id, { ...hosts.get(h.id), ...h })
+  return { success: true }
+}
 
-export const connectAll = () => post<{ success: boolean; data: any[] }>(`/api/hosts/connect-all`)
-export const disconnectAll = () => post<{ success: boolean; data: any[] }>(`/api/hosts/disconnect-all`)
+export async function deleteHost(id: string) {
+  hosts.delete(id)
+  return { success: true }
+}
+
+export function __getHosts(): HostConfig[] {
+  return Array.from(hosts.values())
+}

@@ -12,6 +12,8 @@
       "@/layout/*": ["src/layout/*"],
       "@/styles/*": ["src/styles/*"],
       "@/pages/*": ["src/pages/*"],
+      "@/contexts/*": ["src/contexts/*"],
+  "@/api": ["src/api/index.ts"],
       "@/api/*": ["src/api/*"],
       "@/hooks/*": ["src/hooks/*"]
     }

@@ -86,3 +86,30 @@ export function useMessages() {
   if (!ctx) throw new Error('useMessages must be used within MessagesProvider')
   return ctx
 }
+
+/**
+ * 依頻道提供型別友善的 logger，避免欄位混用。
+ * 用法：
+ *   const log = useChannelLoggers();
+ *   log.modbusSend.info({ text: '寫入前', hostId, slaveAddr, action: 'write', modbus: { fc: 0x06, address, values: [v] } })
+ *   log.modbusSend.success({ text: '寫入完成', ok: true, hostId, slaveAddr, action: 'write', modbus: { fc: 0x06, address, values: [v] } })
+ */
+export function useChannelLoggers() {
+  const { push } = useMessages()
+
+  type Base = Omit<Msg, 'id'|'ts'|'level'|'channel'>
+  const byLevel = (channel: MsgChannel) => ({
+    info:   (p: Base & { text?: string }) => push({ channel, level: 'info',   ...p }),
+    success:(p: Base & { text?: string }) => push({ channel, level: 'success',...p }),
+    warning:(p: Base & { text?: string }) => push({ channel, level: 'warning',...p }),
+    error:  (p: Base & { text?: string }) => push({ channel, level: 'error',  ...p }),
+  })
+
+  return {
+    web: byLevel('web'),
+    modbusPoll: byLevel('modbusPoll'),
+    modbusSend: byLevel('modbusSend'),
+    dbPollDb: byLevel('dbPollDb'),
+    dbPollMb: byLevel('dbPollMb'),
+  }
+}

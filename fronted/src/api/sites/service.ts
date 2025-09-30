@@ -1,185 +1,217 @@
-import { get, post, patch, del } from '@/api/shared/http'
+// In-memory stub service for Sites/Hosts/Slaves/Versions to unblock frontend UI
+// NOTE: This is a temporary stub. Replace with real HTTP calls when backend is ready.
 
-// Types mirrored from server shapes (minimal subset)
 export type DbSlave = {
   id: string
-  name: string
   unitId: number
-  enabled?: boolean
-  type?: 'SL-SW8CH' | 'SL-1-10V4CHDIM' | null
-  swMask?: number
-  dimMask?: number
-  dimValues?: number[]
+  name?: string
+  type: 'SL-SW8CH' | 'SL-1-10V4CHDIM'
+  enabled: boolean
   floor?: string
   room?: string
   note?: string
-  sort?: number
+  swMask?: number
+  dimMask?: number
+  dimValues?: number[]
 }
 
 export type DbHost = {
   id: string
-  name: string
-  enabled?: number | boolean
-  type?: string | null
-  ip?: string | null
-  port?: number | null
-  unitId?: number | null
-  serialPath?: string | null
-  baudRate?: number | null
-  dataBits?: number | null
-  parity?: string | null
-  stopBits?: number | null
-  floor?: string | null
-  room?: string | null
-  note?: string | null
-  sort?: number | null
-  slaves?: DbSlave[]
+  name?: string
+  ip?: string
+  port?: number
+  unitId?: number
+  floor?: string
+  room?: string
+  note?: string
+  slaves: DbSlave[]
 }
 
 export type DbSite = {
   id: string
   name: string
-  description?: string
-  createdAt: number
-  updatedAt: number
-  // latest version string from server aggregation (optional)
   version?: string
   hosts: DbHost[]
-  versions?: DbSiteVersion[]
 }
 
 export type DbSiteVersion = {
   id: string
-  siteId?: string
-  major?: number
-  minor?: number
-  patch?: number
   version: string
-  note?: string | null
+  note?: string
   createdAt: number
-  updatedAt: number
 }
 
-export async function listSites() {
-  return get<{ success: boolean; data: DbSite[] }>(`/api/sites`).then(r=>r.data)
+// In-memory state
+const sites: DbSite[] = []
+const versions = new Map<string, DbSiteVersion[]>()
+
+function uuid() {
+  try { return (globalThis.crypto as any).randomUUID() } catch { return 'id-' + Math.random().toString(36).slice(2) }
 }
 
-export async function createSite(name: string, description = '') {
-  return post<{ success: boolean; data: { id: string; name: string; description: string; createdAt: number; updatedAt: number } }>(`/api/sites`, { name, description }).then(r=>r.data)
+// Seed one demo site for convenience
+(function seed() {
+  if (sites.length) return
+  const siteId = uuid()
+  const hostId = uuid()
+  sites.push({ id: siteId, name: '示範案場', version: '1', hosts: [
+    { id: hostId, name: '主機1', ip: '192.168.0.100', port: 502, unitId: 1, floor: '1F', room: '機房A', note: '備註', slaves: [
+      { id: uuid(), unitId: 1, name: '從機1', type: 'SL-SW8CH', enabled: true, floor: '1F', room: '機房A', note: '', swMask: 0 },
+      { id: uuid(), unitId: 2, name: '從機2', type: 'SL-1-10V4CHDIM', enabled: true, floor: '1F', room: '機房A', note: '', dimMask: 0, dimValues: [0,0,0,0] },
+    ] }
+  ] })
+  versions.set(siteId, [{ id: uuid(), version: '1', createdAt: Date.now() }])
+})()
+
+export async function listSites(): Promise<DbSite[]> {
+  // 隱藏任何特殊用途的臨時站點（例如 __status__）
+  return JSON.parse(JSON.stringify(sites.filter(s => s.id !== '__status__')))
 }
 
-export async function patchSite(siteId: string, patchBody: Partial<Pick<DbSite, 'name'|'description'>>) {
-  return patch<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}`, patchBody)
+export async function createSite(name: string) {
+  const s: DbSite = { id: uuid(), name, version: '1', hosts: [] }
+  sites.push(s)
+  versions.set(s.id, [{ id: uuid(), version: '1', createdAt: Date.now() }])
+  return s
 }
 
-export async function deleteSite(siteId: string) {
-  return del<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}`)
+export async function deleteSite(id: string) {
+  const idx = sites.findIndex(s => s.id === id)
+  if (idx >= 0) sites.splice(idx, 1)
+  versions.delete(id)
+  return { success: true }
 }
 
-export async function listHosts(siteId: string) {
-  return get<{ success: boolean; data: DbHost[] }>(`/api/sites/${encodeURIComponent(siteId)}/hosts`).then(r=>r.data)
+export async function patchSite(id: string, patch: Partial<DbSite>) {
+  const s = sites.find(x => x.id === id); if (!s) return { success: false }
+  Object.assign(s, patch)
+  return { success: true }
 }
 
-export async function addHost(siteId: string, body: Partial<DbHost> & { name: string }) {
-  return post<{ success: boolean; data: { id: string } }>(`/api/sites/${encodeURIComponent(siteId)}/hosts`, body).then(r=>r.data)
-}
-
-export async function patchHost(siteId: string, hostId: string, body: Partial<DbHost>) {
-  return patch<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/hosts/${encodeURIComponent(hostId)}`, body)
+export async function addHost(siteId: string, body: Omit<DbHost, 'id' | 'slaves'> & { slaves?: DbSlave[] }) {
+  const s = sites.find(x => x.id === siteId); if (!s) throw new Error('site not found')
+  const h: DbHost = { id: uuid(), ...body, slaves: body.slaves ?? [] }
+  s.hosts.push(h)
+  return { id: h.id }
 }
 
 export async function deleteHost(siteId: string, hostId: string) {
-  return del<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/hosts/${encodeURIComponent(hostId)}`)
+  const s = sites.find(x => x.id === siteId); if (!s) throw new Error('site not found')
+  s.hosts = s.hosts.filter(h => h.id !== hostId)
+  return { success: true }
 }
 
-export async function listSlaves(hostId: string) {
-  return get<{ success: boolean; data: DbSlave[] }>(`/api/sites/by-host/${encodeURIComponent(hostId)}/slaves`).then(r=>r.data)
+export async function patchHost(siteId: string, hostId: string, patch: Partial<DbHost>) {
+  const s = sites.find(x => x.id === siteId); if (!s) throw new Error('site not found')
+  const h = s.hosts.find(x => x.id === hostId); if (!h) throw new Error('host not found')
+  Object.assign(h, patch)
+  return { success: true }
 }
 
-export async function addSlave(hostId: string, body: Partial<DbSlave> & { name: string }) {
-  return post<{ success: boolean; data: { id: string } }>(`/api/sites/by-host/${encodeURIComponent(hostId)}/slaves`, body).then(r=>r.data)
+export async function patchHostById(hostId: string, patch: Partial<DbHost>) {
+  for (const s of sites) {
+    const h = s.hosts.find(x => x.id === hostId)
+    if (h) { Object.assign(h, patch); return { success: true } }
+  }
+  throw new Error('host not found')
 }
 
-export async function patchSlave(hostId: string, slaveId: string, body: Partial<DbSlave>) {
-  return patch<{ success: boolean }>(`/api/sites/by-host/${encodeURIComponent(hostId)}/slaves/${encodeURIComponent(slaveId)}`, body)
+export async function addSlave(hostId: string, body: Omit<DbSlave, 'id'>) {
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId)
+  if (!h) throw new Error('host not found')
+  const exists = h.slaves.some(s => s.unitId === body.unitId)
+  if (exists) throw new Error('duplicate unitId')
+  const sl: DbSlave = { id: uuid(), ...body }
+  h.slaves.push(sl)
+  return { id: sl.id }
 }
 
 export async function deleteSlave(hostId: string, slaveId: string) {
-  return del<{ success: boolean }>(`/api/sites/by-host/${encodeURIComponent(hostId)}/slaves/${encodeURIComponent(slaveId)}`)
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId); if (!h) throw new Error('host not found')
+  h.slaves = h.slaves.filter(x => x.id !== slaveId)
+  return { success: true }
 }
 
-export async function listVersions(siteId: string) {
-  return get<{ success: boolean; data: DbSiteVersion[] }>(`/api/sites/${encodeURIComponent(siteId)}/versions`).then(r=>r.data)
+export async function patchSlave(hostId: string, slaveId: string, patch: Partial<DbSlave>) {
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId); if (!h) throw new Error('host not found')
+  const sl = h.slaves.find(x => x.id === slaveId); if (!sl) throw new Error('slave not found')
+  Object.assign(sl, patch)
+  return { success: true }
 }
 
-export async function createVersion(siteId: string, fromCurrent = true) {
-  try {
-    return await post<{ success: boolean; data: { id: string; version: string; createdAt: number; updatedAt: number } }>(`/api/sites/${encodeURIComponent(siteId)}/versions`)
-      .then(r=>r.data)
-  } catch (e:any) {
-    throw e
+export async function patchSlaveByUnit(hostId: string, unitId: number, patch: Partial<DbSlave>) {
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId); if (!h) throw new Error('host not found')
+  const sl = h.slaves.find(x => x.unitId === unitId); if (!sl) throw new Error('slave not found')
+  Object.assign(sl, patch)
+  return { success: true }
+}
+
+export async function listSlavesByHostId(hostId: string): Promise<DbSlave[]> {
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId); if (!h) return []
+  return JSON.parse(JSON.stringify(h.slaves || []))
+}
+
+export async function deleteSlaveByUnit(hostId: string, unitId: number) {
+  const h = sites.flatMap(s => s.hosts).find(x => x.id === hostId); if (!h) throw new Error('host not found')
+  const idx = h.slaves.findIndex(x => x.unitId === unitId)
+  if (idx >= 0) { h.slaves.splice(idx, 1); return { success: true } }
+  throw new Error('slave not found')
+}
+
+export async function listVersionsPaged(siteId: string, opts: { limit: number; offset: number; sort?: 'created_at'|'version'|'created'|'version'; order?: 'ASC'|'DESC' }) {
+  const arr = versions.get(siteId) || []
+  let rows = [...arr]
+  const sortKey = (opts.sort === 'version' ? 'version' : 'createdAt') as 'version' | 'createdAt'
+  rows.sort((a, b) => (opts.order === 'ASC' ? 1 : -1) * ((a as any)[sortKey] > (b as any)[sortKey] ? 1 : -1))
+  const total = rows.length
+  rows = rows.slice(opts.offset, opts.offset + opts.limit)
+  return { data: rows, total }
+}
+
+export async function createVersion(siteId: string, autoIncrement = true) {
+  const arr = versions.get(siteId) || []
+  let next = '1'
+  if (autoIncrement && arr.length) {
+    const nums = arr.map(v => Number(v.version)).filter(n => Number.isFinite(n))
+    next = String((nums.length ? Math.max(...nums) : 0) + 1)
   }
+  const v: DbSiteVersion = { id: uuid(), version: next, createdAt: Date.now() }
+  arr.unshift(v)
+  versions.set(siteId, arr)
+  return v
 }
 
-export async function overwriteVersion(siteId: string, versionId: string) {
-  return post<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/versions/${encodeURIComponent(versionId)}/overwrite`)
+export async function applyVersion(siteId: string, versionId: string, overwriteCurrent = true) {
+  const s = sites.find(x => x.id === siteId); if (!s) throw new Error('site not found')
+  const v = (versions.get(siteId) || []).find(x => x.id === versionId); if (!v) throw new Error('version not found')
+  if (overwriteCurrent) s.version = v.version
+  return { success: true }
 }
 
-export async function patchVersion(siteId: string, versionId: string, body: { note?: string | null }) {
-  return patch<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/versions/${encodeURIComponent(versionId)}`, body)
+export async function exportVersion(siteId: string, _versionId: string) {
+  return { hosts: JSON.parse(JSON.stringify(sites.find(s => s.id === siteId)?.hosts || [])) }
 }
 
-// 分頁版本列表（新）
-export type VersionsPaged = {
-  success: boolean
-  data: DbSiteVersion[]
-  total: number
-  limit?: number
-  offset?: number
-  sort?: string
-  order?: 'ASC'|'DESC'
-}
-
-export async function listVersionsPaged(siteId: string, opts?: { limit?: number; offset?: number; sort?: 'created_at'|'updated_at'|'version'; order?: 'ASC'|'DESC' }) {
-  const params = new URLSearchParams()
-  params.set('paged', '1')
-  if (opts?.limit != null) params.set('limit', String(opts.limit))
-  if (opts?.offset != null) params.set('offset', String(opts.offset))
-  if (opts?.sort) params.set('sort', String(opts.sort))
-  if (opts?.order) params.set('order', String(opts.order))
-  const url = `/api/sites/${encodeURIComponent(siteId)}/versions?` + params.toString()
-  return get<VersionsPaged>(url)
-}
-
-// 取得最新一筆版本（新）
-export async function getLatestVersion(siteId: string) {
-  return get<{ success: boolean; data: DbSiteVersion | null }>(`/api/sites/${encodeURIComponent(siteId)}/versions/latest`).then(r=>r.data)
-}
-
-export async function exportVersion(siteId: string, versionId: string) {
-  return get<{ success: boolean; data: any }>(`/api/sites/${encodeURIComponent(siteId)}/versions/${encodeURIComponent(versionId)}/export`).then(r=>r.data)
-}
-
-export async function importVersion(siteId: string, versionId: string, payload: any, applyToCurrent = true, prune = true) {
-  return post<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/versions/${encodeURIComponent(versionId)}/import`, { payload, applyToCurrent, prune })
+export async function importVersion(_siteId: string, _versionId: string, _payload: any, _apply = true, _prune = true) {
+  return { success: true }
 }
 
 export async function deleteVersion(siteId: string, versionId: string) {
-  return del<{ success: boolean }>(`/api/sites/${encodeURIComponent(siteId)}/versions/${encodeURIComponent(versionId)}`)
+  const arr = versions.get(siteId) || []
+  const idx = arr.findIndex(v => v.id === versionId)
+  if (idx >= 0) arr.splice(idx, 1)
+  versions.set(siteId, arr)
+  return { success: true }
 }
 
-// 套用指定版本到現用配置（由前端串 export -> import 完成）
-export async function applyVersion(siteId: string, versionId: string, prune = true) {
-  const payload = await exportVersion(siteId, versionId)
-  await importVersion(siteId, versionId, payload, true, prune)
+export async function overwriteVersion(_siteId: string, _versionId: string) {
+  return { success: true }
 }
 
-// New: patch host by hostId (no siteId required)
-export async function patchHostById(hostId: string, body: Partial<DbHost>) {
-  return patch<{ success: boolean }>(`/api/sites/by-host/${encodeURIComponent(hostId)}`, body)
-}
-
-// New: patch slave by (hostId + unitId) to edit name or unitId directly
-export async function patchSlaveByUnit(hostId: string, unitId: number, body: Partial<DbSlave> & { unitId?: number }) {
-  return patch<{ success: boolean }>(`/api/sites/by-host/${encodeURIComponent(hostId)}/slaves/by-unit/${unitId}`, body)
+export async function patchVersion(siteId: string, versionId: string, patch: Partial<DbSiteVersion>) {
+  const arr = versions.get(siteId) || []
+  const v = arr.find(x => x.id === versionId); if (!v) throw new Error('version not found')
+  Object.assign(v, patch)
+  versions.set(siteId, arr)
+  return { success: true }
 }

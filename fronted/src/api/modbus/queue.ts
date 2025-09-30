@@ -1,28 +1,23 @@
-// Simple localStorage-based queue for write operations when host is offline
-// Each operation targets a hostId with specific address/value
+// Simple in-memory queue for write operations; frontend stub
 
-export type PendingOp = { hostId: string; address: number; value: number; ts: number }
-const KEY = 'ms:pendingOps'
+type Task = { hostId: string; address: number; value: number }
+const queue: Task[] = []
 
-function readQueue(): PendingOp[] {
-  try { const raw = localStorage.getItem(KEY); if (!raw) return []; const arr = JSON.parse(raw); return Array.isArray(arr) ? arr : [] } catch { return [] }
+export function enqueue(hostId: string, address: number, value: number) {
+  queue.push({ hostId, address, value })
 }
-function writeQueue(arr: PendingOp[]) { try { localStorage.setItem(KEY, JSON.stringify(arr)) } catch {} }
 
-export function enqueue(op: PendingOp) { const q = readQueue(); q.push(op); writeQueue(q) }
-export function drainHost(hostId: string): PendingOp[] { const q = readQueue(); const pick = q.filter(o => o.hostId === hostId); const rest = q.filter(o => o.hostId !== hostId); writeQueue(rest); return pick }
-export function allQueue(): PendingOp[] { return readQueue() }
-
-export async function flush(isHostConnected: (id: string)=>boolean, writer: (id: string, address: number, value: number)=>Promise<boolean>) {
-  const q = readQueue()
-  if (!q.length) return
-  const remain: PendingOp[] = []
-  for (const op of q) {
-    if (!isHostConnected(op.hostId)) { remain.push(op); continue }
-    try {
-      const ok = await writer(op.hostId, op.address, op.value)
-      if (!ok) remain.push(op)
-    } catch { remain.push(op) }
+// flush: when a host becomes connected, execute callback per task
+export async function flush(isConnected: (hostId: string) => boolean, exec: (hostId: string, address: number, value: number) => Promise<boolean>) {
+  // process tasks where host is connected
+  let i = 0
+  while (i < queue.length) {
+    const t = queue[i]
+    if (isConnected(t.hostId)) {
+      try { await exec(t.hostId, t.address, t.value) } catch {}
+      queue.splice(i, 1)
+    } else {
+      i += 1
+    }
   }
-  writeQueue(remain)
 }

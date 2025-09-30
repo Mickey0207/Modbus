@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './pages/App'
 import './styles/global.scss'
-import { MessagesProvider } from '@/api/contexts/MessagesContext'
+import { MessagesProvider } from '@/contexts/MessagesContext'
 
 const root = document.getElementById('root')!
 createRoot(root).render(

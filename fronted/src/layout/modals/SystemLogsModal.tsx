@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { Modal, SmartTable, Select, Button, LightButton } from '@/components'
-import { useMessages, type MsgChannel } from '@/api/contexts/MessagesContext'
+import { useMessages, type MsgChannel } from '@/contexts/MessagesContext'
 import * as SitesApi from '@/api/sites/service'
 
 export default function SystemLogsModal({ open, onClose, channel, title }:{ open: boolean; onClose: () => void; channel: MsgChannel; title: string }) {
@@ -41,6 +41,7 @@ export default function SystemLogsModal({ open, onClose, channel, title }:{ open
   useEffect(() => { if (open) reloadNames() }, [open, reloadNames])
 
   const isDbChannel = channel === 'web' || channel === 'dbPollDb'
+  const isDbDb = channel === 'dbPollDb'
   const isModbusChannel = channel === 'modbusPoll' || channel === 'modbusSend' || channel === 'dbPollMb'
 
   const list = useMemo(() => {
@@ -59,13 +60,24 @@ export default function SystemLogsModal({ open, onClose, channel, title }:{ open
         const sub = slaveNameMap[r.hostId] || {}
         return sub[v] || String(v)
       } },
-      { key: 'action', title: '動作', width: 80, render: (v: any) => v === 'write' ? '寫入' : (v === 'read' ? '讀取' : '—') },
-      { key: 'ok', title: '結果', width: 80, render: (v: any) => (typeof v === 'boolean' ? (v ? '成功' : '失敗') : '—') },
     ]
 
+    // 「動作」：dbPollDb 不顯示
+    if (channel !== 'dbPollDb') {
+      cols.push({ key: 'action', title: '動作', width: 80, render: (v: any) => v === 'write' ? '寫入' : (v === 'read' ? '讀取' : '—') })
+    }
+
+    // 「結果」欄位：dbPollDb 頻道不顯示，其餘保留
+    if (!isDbDb) {
+      cols.push({ key: 'ok', title: '結果', width: 80, render: (v: any) => (typeof v === 'boolean' ? (v ? '成功' : '失敗') : '—') })
+    }
+
     if (isDbChannel) {
+      // 「訊息」欄位：僅非 dbPollDb 時顯示（web 保留）
+      if (!isDbDb) {
+        cols.push({ key: 'msg', title: '訊息', width: 260, render: (_: any, r: any) => (r?.text || '—') })
+      }
       cols.push(
-        { key: 'msg', title: '訊息', width: 260, render: (_: any, r: any) => (r?.text || '—') },
         { key: 'db_table', title: '資料表', width: 200, render: (_: any, r: any) => r?.db?.table || '—' },
         { key: 'db_op', title: '類型', width: 100, render: (_: any, r: any) => (r?.db?.op ? String(r.db.op).toUpperCase() : '—') },
         { key: 'db_cols', title: '欄位', render: (_: any, r: any) => {
@@ -96,21 +108,27 @@ export default function SystemLogsModal({ open, onClose, channel, title }:{ open
           const addr = Number(r?.modbus?.address)
           return Number.isFinite(addr) ? addr : '—'
         } },
-        { key: 'vals', title: '寫入值', render: (_: any, r: any) => {
+      )
+      // 「寫入值」：dbPollMb(接收) 不顯示
+      if (channel !== 'dbPollMb') {
+        cols.push({ key: 'vals', title: '寫入值', render: (_: any, r: any) => {
           const fc = Number(r?.modbus?.fc)
           const vals = r?.modbus?.values
           if (fc !== 0x06) return '—'
           if (!Array.isArray(vals) || !vals.length) return '—'
           return <span className="mono">[{vals.slice(0,8).join(', ')}{vals.length>8?'…':''}]</span>
-        } },
-        { key: 'ret', title: '回傳結果', render: (_: any, r: any) => {
+        } })
+      }
+      // 「回傳結果」：modbusSend(傳送) 不顯示
+      if (channel !== 'modbusSend') {
+        cols.push({ key: 'ret', title: '回傳結果', render: (_: any, r: any) => {
           const fc = Number(r?.modbus?.fc)
           const vals = r?.modbus?.values
           if (fc !== 0x03) return '—'
           if (!Array.isArray(vals) || !vals.length) return '—'
           return <span className="mono">[{vals.slice(0,8).join(', ')}{vals.length>8?'…':''}]</span>
-        } },
-      )
+        } })
+      }
     }
 
     cols.push({ key: 'light', title: '燈號/調光/訊息', render: (_: any, r: any) => {

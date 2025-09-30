@@ -5,7 +5,7 @@ import { readHoldingRegisters } from '@/api/modbus/operations'
 
 type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
-import { useMessages } from '@/api/contexts/MessagesContext'
+import { useMessages } from '@/contexts/MessagesContext'
 
 export default function ReadHoldingRegistersModal({ open, onClose, hosts, push }: { open: boolean; onClose: () => void; hosts: Host[]; push: (lvl: 'info'|'success'|'warning'|'error', text: string) => void }) {
   const [selected, setSelected] = useState('')

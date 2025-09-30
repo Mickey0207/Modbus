@@ -1,15 +1,17 @@
 import React, { useMemo, useState } from 'react'
 import { Modal, Select, Button, NumberInput, SmartTable } from '@/components'
-import { IconCopy, IconEdit } from '@/components/icons'
 import { writeSingleRegister } from '@/api/modbus/operations'
-import { useMessages } from '@/api/contexts/MessagesContext'
+import { useMessages } from '@/contexts/MessagesContext'
 
-type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
+type Host = { id: string; name?: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
-type History = { id: string; ts: number; hostId: string; unitId?: number; ip?: string; port?: number; addr: number; value: number; ok: boolean; message?: string }
+type History = { id: string; ts: number; hostId?: string; unitId?: number; ip?: string; port?: number; addr: number; value: number; ok: boolean; message?: string }
 
 export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, push }: { open: boolean; onClose: () => void; hosts: Host[]; push: (lvl: 'info'|'success'|'warning'|'error', text: string) => void }) {
   const [selected, setSelected] = useState('')
+  const [unitId, setUnitId] = useState<number>(1)
+  const [slaveType, setSlaveType] = useState<'SL-SW8CH'|'SL-1-10V4CHDIM'>('SL-SW8CH')
+  const [groupMode, setGroupMode] = useState<'群組'|'場景'>('群組')
   const [addr, setAddr] = useState(0)
   const [value, setValue] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -17,10 +19,16 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
   const { push: pushMsg } = useMessages()
 
   const selectedHost = useMemo(() => hosts.find(h => h.id === selected), [hosts, selected])
+  const hostNameMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const h of hosts) map[h.id] = h.name || h.id
+    return map
+  }, [hosts])
 
   const validate = () => {
     if (!selected) { push('warning', '請先選擇主機'); return false }
     if (!selectedHost?.connected) { push('warning', '目標主機未連線'); return false }
+    if (!Number.isFinite(unitId) || unitId < 1 || unitId > 247) { push('warning', '站號需為 1~247 的整數'); return false }
     if (!Number.isFinite(addr) || addr < 0 || addr > 65535) { push('warning', '位址需為 0~65535 的整數'); return false }
     if (!Number.isFinite(value) || value < 0 || value > 0xFFFF) { push('warning', '數值需為 0~65535 的整數'); return false }
     return true
@@ -30,25 +38,24 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
     if (!validate()) return
     try {
       setLoading(true)
-      const r = await writeSingleRegister(selected, Number(addr), Number(value))
+      const r = await writeSingleRegister({ hostId: selected, unitId: Number(unitId) }, Number(addr), Number(value))
       const ok = (r as any)?.success !== false
-      setHistory(h => [{ id: crypto.randomUUID?.() ?? String(Date.now()), ts: Date.now(), hostId: selected, unitId: selectedHost?.unitId, ip: selectedHost?.ip, port: selectedHost?.port, addr: Number(addr), value: Number(value), ok, message: (r as any)?.message }, ...h])
-      try { pushMsg({ channel: 'modbusSend', level: ok ? 'success' : 'warning', text: `WRITE 0x06：${selected} @${addr} = ${value}`, hostId: selected, action: 'write', ok, target: 'host', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
+  setHistory(h => [{ id: crypto.randomUUID?.() ?? String(Date.now()), ts: Date.now(), hostId: selected, unitId: Number(unitId), addr: Number(addr), value: Number(value), ok, message: (r as any)?.message }, ...h])
+      try { pushMsg({ channel: 'modbusSend', level: ok ? 'success' : 'warning', text: `WRITE 0x06：${selected} @${addr} = ${value} (站號:${unitId})`, hostId: selected, slaveAddr: Number(unitId), action: 'write', ok, target: 'slave', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
     } catch (e: any) {
       // 改以結構化訊息呈現錯誤
-      try { pushMsg({ channel: 'modbusSend', level: 'error', text: `WRITE 失敗：${selected} @${addr} = ${value}`, hostId: selected, action: 'write', ok: false, target: 'host', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
+      try { pushMsg({ channel: 'modbusSend', level: 'error', text: `WRITE 失敗：${selected} @${addr} = ${value} (站號:${unitId})`, hostId: selected, slaveAddr: Number(unitId), action: 'write', ok: false, target: 'slave', modbus: { fc: 0x06, address: Number(addr), values: [Number(value)] } }) } catch {}
     } finally { setLoading(false) }
   }
 
   const columns = [
     { key: 'ts', title: '時間', width: 160, render: (v: number) => new Date(v).toLocaleString() },
-    { key: 'hostId', title: 'ID', width: 110 },
-    { key: 'ip', title: 'IP', width: 140 },
-    { key: 'port', title: 'Port', width: 80 },
-    { key: 'unitId', title: '站號', width: 80 },
+    { key: 'hostId', title: '主機名稱', width: 180, render: (v: string) => hostNameMap[v] || v || '—' },
+    { key: 'unitId', title: '站號', width: 70 },
     { key: 'addr', title: '位址', width: 80 },
     { key: 'value', title: '數值', width: 80 },
-    { key: 'ok', title: '狀態', width: 100, render: (ok: boolean) => ok ? '寫入成功' : '寫入失敗' },
+  // 485 幀設定移除
+    { key: 'ok', title: '狀態', width: 90, render: (ok: boolean) => ok ? '成功' : '失敗' },
     { key: 'message', title: '訊息' },
   ]
 
@@ -88,6 +95,24 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
                 ]}
               />
             </div>
+            <div className="col" style={{ maxWidth: 140 }}>
+              <label>站號</label>
+              <NumberInput value={unitId} onChange={setUnitId} min={1} max={247} />
+            </div>
+            <div className="col" style={{ maxWidth: 220 }}>
+              <label>從機類型</label>
+              <Select value={slaveType} onChange={(v: string)=>setSlaveType(v as any)} options={[
+                { value: 'SL-SW8CH', label: 'SL-SW8CH' },
+                { value: 'SL-1-10V4CHDIM', label: 'SL-1-10V4CHDIM' },
+              ]} />
+            </div>
+            <div className="col" style={{ maxWidth: 180 }}>
+              <label>群組/場景</label>
+              <Select value={groupMode} onChange={(v: string)=>setGroupMode(v as any)} options={[
+                { value: '群組', label: '群組' },
+                { value: '場景', label: '場景' },
+              ]} />
+            </div>
             <div className="col" style={{ maxWidth: 200 }}>
               <label>位址</label>
               <NumberInput value={addr} onChange={setAddr} min={0} max={65535} />
@@ -109,12 +134,7 @@ export default function WriteSingleRegisterSlaveModal({ open, onClose, hosts, pu
             columns={columns as any}
             data={history as any}
             rowKey={(r:any)=>r.id}
-            renderActions={(r:any)=> (
-              <div className="row" style={{ gap: 6 }}>
-                <button className="icon-btn" title="複製" aria-label="複製" onClick={() => copyRow(r)}><IconCopy /></button>
-                <button className="icon-btn" title="填入" aria-label="填入" onClick={() => applyRow(r)}><IconEdit /></button>
-              </div>
-            )}
+            showActions={false}
           />
         </div>
       </div>

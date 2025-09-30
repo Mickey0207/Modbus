@@ -1,30 +1,17 @@
-import { get, post } from '@/api/shared/http'
+// Stubbed Serial Spy API for frontend-only development
 
-export interface ListPortsResult {
-  success: boolean
-  data?: Array<{ path: string; manufacturer?: string }>
-  message?: string
+export async function listSerialPorts() {
+  return {
+    success: true,
+    data: [
+      { path: 'COM3', manufacturer: 'MockUSB' },
+      { path: 'COM4', manufacturer: 'MockUART' },
+    ],
+  }
 }
 
-export interface CaptureParams {
-  path: string
-  baudRate: number
-  dataBits: number
-  stopBits: number
-  parity: 'none' | 'even' | 'odd'
-  durationMs: number
-}
-
-export interface CaptureResult {
-  success: boolean
-  data?: { hex: string; bytes: number }
-  message?: string
-}
-
-export function listSerialPorts() {
-  return get<ListPortsResult>('/api/serialspy/ports')
-}
-
-export function captureSerial(params: CaptureParams) {
-  return post<CaptureResult>('/api/serialspy/capture', params)
+export async function captureSerial(_opts: { path: string; baudRate: number; dataBits: number; stopBits: number; parity: 'none'|'even'|'odd'; durationMs: number; }) {
+  const hex = 'AA BB CC DD EE FF' // mock payload
+  const bytes = hex.split(/\s+/).filter(Boolean).length
+  return { success: true, data: { hex, bytes } }
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, forwardRef } from 'react'
+import React, { useCallback, forwardRef, useEffect, useRef } from 'react'
 
 type Props = {
   value: number
@@ -29,6 +29,17 @@ const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberInput({
   onKeyDown,
   allowEmpty = false,
 }, ref) {
+  // 當滑鼠懸停或輸入框聚焦時，攔截全域滾輪避免頁面捲動（採用捕獲階段 + 非被動監聽）
+  const hotRef = useRef(false)
+  useEffect(() => {
+    const onWheelCapture = (ev: WheelEvent) => {
+      if (!hotRef.current) return
+      // 僅阻止預設捲動，讓事件繼續傳到目標元素，由目標的 onWheel 處理數值變更
+      try { ev.preventDefault() } catch {}
+    }
+    window.addEventListener('wheel', onWheelCapture, { capture: true, passive: false })
+    return () => window.removeEventListener('wheel', onWheelCapture, { capture: true } as any)
+  }, [])
   const clamp = useCallback((v: number) => {
     let n = v
     if (typeof min === 'number') n = Math.max(min, n)
@@ -46,7 +57,9 @@ const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberInput({
 
   const handleWheel: React.WheelEventHandler<HTMLInputElement> = (e) => {
     if (disabled) return
+    // 阻止頁面跟著滾動，僅調整數字本身
     e.preventDefault()
+    e.stopPropagation()
     const delta = (e.deltaY ?? 0) > 0 ? -step : step
     onChange(clamp(value + delta))
   }
@@ -72,7 +85,10 @@ const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberInput({
       disabled={disabled}
       onChange={handleChange}
       onWheel={handleWheel}
-      onBlur={onBlur}
+      onMouseEnter={()=>{ hotRef.current = true }}
+      onMouseLeave={()=>{ hotRef.current = false }}
+      onFocus={()=>{ hotRef.current = true }}
+  onBlur={(e)=>{ hotRef.current = false; onBlur?.(e) }}
       onKeyDown={handleKeyDown}
       inputMode="numeric"
     />

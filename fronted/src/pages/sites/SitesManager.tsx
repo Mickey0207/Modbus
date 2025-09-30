@@ -1,15 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Button, SmartTable, InlineEditableCell, Select, Modal, NumberInput, Input, TextBlock } from '@/components/index'
+import { Button, SmartTable, InlineEditableCell, Select, Modal, NumberInput, Input, TextBlock, LightButton } from '@/components/index'
 import { IconTrash, IconPlus, IconLink } from '@/components/icons'
 import useHosts from '@/hooks/useHosts'
-import { writeOrQueue } from '@/api/modbus/operations'
-import { sw8MaskAddress, dimMaskAddress, dimValueAddress } from '@/api/modbus/mapping'
+import { writeOrQueue, sw8MaskAddress, dimMaskAddress, dimValueAddress } from '@/api/modbus'
 // Switch to DB-backed endpoints
 import * as SitesApi from '@/api/sites/service'
 import type { DbSite as Site, DbHost as Host, DbSlave as Slave, DbSiteVersion as SiteVersion } from '@/api/sites/service'
-import { pollStatuses, scanAllSlaves } from '@/api/status'
-import { useMessages } from '@/api/contexts/MessagesContext'
+import { useMessages } from '@/contexts/MessagesContext'
+import { pollStatuses } from '@/api/status'
 
 function useSites() {
   const [sites, setSites] = useState<Site[]>([])
@@ -244,6 +243,72 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
     })))
   }
 
+  // 批量新增群組/場景 Modal 觸發狀態
+  const [batchGs, setBatchGs] = useState<{ hostId: string; unitId: number } | null>(null)
+
+  // 三層快速選單狀態：全域 / 主機 / 從機（值為 '': 無，或 '1'..'32'）
+  type QuickSel = { group?: string; scene?: string }
+  const [globalQuick, setGlobalQuick] = useState<QuickSel>({ group:'', scene:'' })
+  const [hostQuick, setHostQuick] = useState<Record<string, QuickSel>>({})
+  const [slaveQuick, setSlaveQuick] = useState<Record<string, QuickSel>>({})
+  const groupKey = (hostId:string) => hostId
+  const slaveKey = (hostId:string, unit:number) => `${hostId}#${unit}`
+  const onGlobalQuickChange = (mode:'group'|'scene', value:string) => {
+    const other: 'group'|'scene' = mode === 'group' ? 'scene' : 'group'
+    const clearOther = value !== ''
+    setGlobalQuick(prev => ({ ...prev, [mode]: value, [other]: clearOther ? '' : prev[other] }))
+    // 同步所有主機
+    setHostQuick(prev => {
+      const next: Record<string, QuickSel> = { ...prev }
+      for (const h of site.hosts) {
+        const k = groupKey(h.id)
+        next[k] = { ...(next[k]||{}), [mode]: value, [other]: clearOther ? '' : (next[k]?.[other]) }
+      }
+      return next
+    })
+    // 同步所有從機
+    setSlaveQuick(prev => {
+      const next: Record<string, QuickSel> = { ...prev }
+      for (const h of site.hosts) {
+        for (const sl of (h.slaves||[])) {
+          const k = slaveKey(h.id, sl.unitId)
+          next[k] = { ...(next[k]||{}), [mode]: value, [other]: clearOther ? '' : (next[k]?.[other]) }
+        }
+      }
+      return next
+    })
+  }
+  const onHostQuickChange = (hostId:string, mode:'group'|'scene', value:string) => {
+    const other: 'group'|'scene' = mode === 'group' ? 'scene' : 'group'
+    const clearOther = value !== ''
+    // 設定主機層
+    setHostQuick(prev => ({
+      ...prev,
+      [groupKey(hostId)]: { ...(prev[groupKey(hostId)]||{}), [mode]: value, [other]: clearOther ? '' : (prev[groupKey(hostId)]?.[other]) }
+    }))
+    // 同步該主機的從機
+    setSlaveQuick(prev => {
+      const next: Record<string, QuickSel> = { ...prev }
+      const h = site.hosts.find(x=>x.id===hostId)
+      if (h) for (const sl of (h.slaves||[])) {
+        const k = slaveKey(hostId, sl.unitId)
+        next[k] = { ...(next[k]||{}), [mode]: value, [other]: clearOther ? '' : (next[k]?.[other]) }
+      }
+      return next
+    })
+  }
+  const onSlaveQuickChange = (hostId:string, unitId:number, mode:'group'|'scene', value:string) => {
+    const other: 'group'|'scene' = mode === 'group' ? 'scene' : 'group'
+    const clearOther = value !== ''
+    setSlaveQuick(prev => ({
+      ...prev,
+      [slaveKey(hostId, unitId)]: { ...(prev[slaveKey(hostId, unitId)]||{}), [mode]: value, [other]: clearOther ? '' : (prev[slaveKey(hostId, unitId)]?.[other]) }
+    }))
+  }
+
+  // 場景→群組對應：每個從機一份 map（key: groupIndex -> number[] of sceneIndex）
+  const [sceneGroupMap, setSceneGroupMap] = useState<Record<string, Record<number, number[]>>>({})
+
   const sendDimOnOff = async (hostId:string, unitId:number, chIndex:number, turnOn:boolean, curMask:number) => {
     const bit = (1 << chIndex)
     let next = turnOn ? (curMask | bit) : (curMask & (~bit))
@@ -280,11 +345,48 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
     })))
   }
 
+  // 群組場景表資料（每個從機一份）
+  type GroupSceneItem = {
+    id: string
+    index: number
+    group?: boolean[]
+    scene?: boolean[]
+    // 僅 DIM 類型使用：每通道 0..255
+    groupVals?: number[]
+    sceneVals?: number[]
+  }
+  const [groupSceneMap, setGroupSceneMap] = useState<Record<string, GroupSceneItem[]>>({})
+  const rid = (hid:string, unit:number) => `${hid}-${unit}`
+  const getGs = (hid:string, unit:number) => groupSceneMap[rid(hid, unit)] || []
+  const setGs = (hid:string, unit:number, rows: GroupSceneItem[]) => setGroupSceneMap(prev => ({ ...prev, [rid(hid, unit)]: rows }))
+  const addGsBatch = (hid:string, unit:number, start:number, end:number, step:number) => {
+    const cur = getGs(hid, unit)
+    const existing = new Set(cur.map(r => r.index))
+    const rows: GroupSceneItem[] = [...cur]
+    const host = site.hosts.find(h=>h.id===hid)
+    const slave = host?.slaves?.find(s=> s.unitId===unit)
+    const isDim = slave?.type === 'SL-1-10V4CHDIM'
+    const count = isDim ? 4 : 8
+    for (let n = start; n <= end; n += step) {
+      if (!existing.has(n)) rows.push({
+        id: crypto.randomUUID?.() || `${Date.now()}-${n}`,
+        index: n,
+        group: Array(count).fill(false),
+        scene: Array(count).fill(false),
+        groupVals: isDim ? Array(count).fill(0) : undefined,
+        sceneVals: isDim ? Array(count).fill(0) : undefined,
+      })
+    }
+    setGs(hid, unit, rows.sort((a,b)=>a.index-b.index))
+  }
+
   return (
     <div className="card">
       <div className="row" style={{ gap: 8, alignItems:'center', justifyContent:'space-between' }}>
         <h3 className="m-0">{site.name}</h3>
         <div className="row" style={{ gap: 8, alignItems:'center' }}>
+          {/* 全域：群組寸動（含「無」），變更時同步主機與從機 */}
+          <GlobalQuickSelectors value={globalQuick} onChange={onGlobalQuickChange} />
           <VersionBadge site={site} setSites={setSites} />
           <Button onClick={addHost}>新增主機</Button>
           <Button onClick={()=> setBatchOpen(true)} className="btn--outline">批量新增主機</Button>
@@ -299,17 +401,7 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
             }
             try { await reload() } catch {}
           }}>刷新狀態</Button>
-          <Button className="btn--outline" onClick={async()=>{
-            push({ channel: 'web', level: 'info', text: '掃描從機：已觸發（全域）' })
-            try {
-              await scanAllSlaves()
-              push({ channel: 'web', level: 'success', text: '掃描從機：後端已接受' })
-              setInfo('已觸發搜尋從機（全域）'); setInfoOpen(true)
-            } catch {
-              push({ channel: 'web', level: 'error', text: '掃描從機：呼叫失敗' })
-            }
-            try { await reload() } catch {}
-          }}>掃描從機</Button>
+          {/* 移除「掃描從機」功能 */}
           <Button className="btn--outline" onClick={()=>{
             setAutoPoll(v=>{
               const next = !v
@@ -355,11 +447,17 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
             <div className="row" style={{ gap: 6 }}>
               <button className="icon-btn icon-only" title="連線" onClick={async()=>{ try { await connect({ id: h.id, ip: String(h.ip||''), port: Number(h.port||502), unitId: Number(h.unitId||1) }); setInfo(`已送出連線：${h.name||h.id}`); setInfoOpen(true) } catch {} }}><IconLink /></button>
               <button className="icon-btn icon-only" title="斷線" onClick={async()=>{ try { await disconnect(h.id); setInfo(`已送出斷線：${h.name||h.id}`); setInfoOpen(true) } catch {} }}><IconLink style={{ transform: 'rotate(45deg)', opacity: .85 }} /></button>
-              <button className="icon-btn icon-only" title="搜尋從機" onClick={async()=>{ try { await scanAllSlaves(); setInfo('已觸發搜尋從機（全域）'); setInfoOpen(true) } catch {} }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="1em" height="1em"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" /></svg>
-              </button>
+              {/* 移除「搜尋從機」圖示按鈕 */}
               <button className="icon-btn icon-only" title="新增從機" onClick={()=>addSlave(h.id)}><IconPlus /></button>
               <button className="icon-btn" title="刪除主機" onClick={()=>removeHost(h.id)}><IconTrash /></button>
+              {/* 主機層：群組寸動（含「無」） */}
+              <Select
+                size="sm"
+                placeholder="群組寸動"
+                value={(hostQuick[groupKey(h.id)]?.group ?? '') as any}
+                onChange={(v)=>onHostQuickChange(h.id, 'group', v)}
+                options={[{ label: '無', value: '' }, ...Array.from({length:32}).map((_,i)=>({ label: `群組${i+1}`, value: String(i+1) }))]}
+              />
             </div>
           )}
           expandable={{
@@ -387,13 +485,9 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
                         })))
                       }} />
                     ) },
-                    { key:'enabled', title:'是否啟用', render:(v:any, r:Slave)=> (
-                      <Select size="sm" value={String((r as any).enabled ? '1' : '0')} onChange={(val)=>patchSlave(h.id, r.unitId, { enabled: val==='1' })} options={[{label:'否', value:'0'}, {label:'是', value:'1'}]} />
-                    ) },
                     { key:'type', title:'從機類型', render:(v:any, r:Slave)=> (
                       <Select size="sm" value={String((r as any).type ?? 'SL-SW8CH')} onChange={(val)=>patchSlave(h.id, r.unitId, { type: val as any })} options={[{label:'SL-SW8CH', value:'SL-SW8CH'}, {label:'SL-1-10V4CHDIM', value:'SL-1-10V4CHDIM'}]} />
                     ) },
-                    { key:'connected', title:'狀態', render:(_v:any, sl:Slave)=> (<span className={`badge ${(sl as any).connected ? 'green' : ''}`}>{(sl as any).connected ? '已連線' : '未連線'}</span>) },
                     { key:'floor', title:'樓層', render:(v:any, r:Slave)=> <InlineEditableCell value={String(v??'')} onCommit={val=>patchSlave(h.id, r.unitId, {floor:String(val)})} /> },
                     { key:'room', title:'機房', render:(v:any, r:Slave)=> <InlineEditableCell value={String(v??'')} onCommit={val=>patchSlave(h.id, r.unitId, {room:String(val)})} /> },
                     { key:'note', title:'備註', render:(v:any, r:Slave)=> <InlineEditableCell value={String((v??'').toString().slice(0,512))} onCommit={val=>patchSlave(h.id, r.unitId, {note:String(val).slice(0,512)})} /> },
@@ -441,14 +535,108 @@ function SiteCard({ siteId, sites, setSites, filterFloor, filterRoom, onDeleteSi
                           ))}
                         </div>
                       )}
+                      {/* 從機層「群組寸動」下拉已移除（保留主機/全域層級） */}
                     </div>
                   )}
+                  expandable={{
+                    expandedRowRender: (sl:Slave) => (
+                      <div className="subtable">
+                        <div className="row" style={{ justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                          <div className="text-muted">群組場景表</div>
+                          <Button className="btn--outline" onClick={()=> setBatchGs({ hostId: h.id, unitId: sl.unitId })}>批量新增群組/場景</Button>
+                        </div>
+                        <SmartTable
+                          columns={([
+                            { key:'index', title:'編號', width:120, render:(v:any, r:GroupSceneItem)=> (
+                              <InlineEditableCell
+                                value={Number(v)}
+                                type="number"
+                                className="mono"
+                                onCommit={(n)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, index: Number(n)||1 } : x).sort((a,b)=>a.index-b.index))}
+                              />
+                            ) },
+                            { key:'groupLights', title:'群組燈號', width:320, render:(_v:any, r:GroupSceneItem)=> {
+                              const isDim = sl.type === 'SL-1-10V4CHDIM'
+                              const count = isDim ? 4 : 8
+                              const ensure = (it: GroupSceneItem) => {
+                                const g = (it.group && it.group.length===count) ? it.group : Array(count).fill(false)
+                                const gv = isDim ? ((it.groupVals && it.groupVals.length===count) ? it.groupVals : Array(count).fill(0)) : undefined
+                                return { g, gv }
+                              }
+                              const { g, gv } = ensure(r)
+                              return (
+                                <div className={isDim? 'dim-group':'light-group'} style={isDim? undefined : { gridTemplateColumns: `repeat(${count}, minmax(28px, 1fr))` }}>
+                                  {Array.from({ length: count }).map((_, i) => (
+                                    isDim ? (
+                                      <div className="dim-pair" key={i}>
+                                        <LightButton size="sm" color="red" on={!!g[i]} onChange={(next)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, group: (()=>{ const arr = (x.group && x.group.length===count ? [...x.group] : Array(count).fill(false)); arr[i]=next; return arr })(), groupVals: (()=>{ const arr = (x.groupVals && x.groupVals.length===count ? [...x.groupVals] : Array(count).fill(0)); return arr })() } : x))} />
+                                        <NumberInput className="dim-input" size="sm" value={Number(gv?.[i] ?? 0)} min={0} max={255} step={1} onChange={(n)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, groupVals: (()=>{ const arr = (x.groupVals && x.groupVals.length===count ? [...x.groupVals] : Array(count).fill(0)); arr[i]=Number(n)||0; return arr })() } : x))} />
+                                      </div>
+                                    ) : (
+                                      <LightButton key={i} size="sm" color="red" on={!!g[i]} onChange={(next)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, group: (()=>{ const arr = (x.group && x.group.length===count ? [...x.group] : Array(count).fill(false)); arr[i]=next; return arr })() } : x))} />
+                                    )
+                                  ))}
+                                </div>
+                              )
+                            } },
+                            { key:'sceneLights', title:'場景燈號', width:320, render:(_v:any, r:GroupSceneItem)=> {
+                              const isDim = sl.type === 'SL-1-10V4CHDIM'
+                              const count = isDim ? 4 : 8
+                              const ensure = (it: GroupSceneItem) => {
+                                const s = (it.scene && it.scene.length===count) ? it.scene : Array(count).fill(false)
+                                const sv = isDim ? ((it.sceneVals && it.sceneVals.length===count) ? it.sceneVals : Array(count).fill(0)) : undefined
+                                return { s, sv }
+                              }
+                              const { s, sv } = ensure(r)
+                              return (
+                                <div className={isDim? 'dim-group':'light-group'} style={isDim? undefined : { gridTemplateColumns: `repeat(${count}, minmax(28px, 1fr))` }}>
+                                  {Array.from({ length: count }).map((_, i) => (
+                                    isDim ? (
+                                      <div className="dim-pair" key={i}>
+                                        <LightButton size="sm" color="yellow" on={!!s[i]} onChange={(next)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, scene: (()=>{ const arr = (x.scene && x.scene.length===count ? [...x.scene] : Array(count).fill(false)); arr[i]=next; return arr })(), sceneVals: (()=>{ const arr = (x.sceneVals && x.sceneVals.length===count ? [...x.sceneVals] : Array(count).fill(0)); return arr })() } : x))} />
+                                        <NumberInput className="dim-input" size="sm" value={Number(sv?.[i] ?? 0)} min={0} max={255} step={1} onChange={(n)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, sceneVals: (()=>{ const arr = (x.sceneVals && x.sceneVals.length===count ? [...x.sceneVals] : Array(count).fill(0)); arr[i]=Number(n)||0; return arr })() } : x))} />
+                                      </div>
+                                    ) : (
+                                      <LightButton key={i} size="sm" color="yellow" on={!!s[i]} onChange={(next)=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).map(x=> x.id===r.id ? { ...x, scene: (()=>{ const arr = (x.scene && x.scene.length===count ? [...x.scene] : Array(count).fill(false)); arr[i]=next; return arr })() } : x))} />
+                                    )
+                                  ))}
+                                </div>
+                              )
+                            } },
+                          ] as any)}
+                          data={getGs(h.id, sl.unitId) as any}
+                          rowKey={(r:GroupSceneItem)=>r.id}
+                          renderActions={(r:GroupSceneItem)=> (
+                            <div className="row" style={{ gap:6 }}>
+                              {/* 多選：將場景指派到此群組（以 Modal 呈現複選），並保證一個場景僅能對應一個群組 */}
+                              <SceneAssign
+                                hostId={h.id}
+                                unitId={sl.unitId}
+                                rows={getGs(h.id, sl.unitId)}
+                                targetIndex={r.index}
+                                mapping={sceneGroupMap[rid(h.id, sl.unitId)] || {}}
+                                onChange={(next)=> setSceneGroupMap(prev=>({ ...prev, [rid(h.id, sl.unitId)]: next }))}
+                              />
+                              <button className="icon-btn" title="刪除" onClick={()=> setGs(h.id, sl.unitId, getGs(h.id, sl.unitId).filter(x=> x.id!==r.id))}><IconTrash /></button>
+                            </div>
+                          )}
+                        />
+                      </div>
+                    )
+                  }}
                 />
               </div>
             )
           }}
         />
       </div>
+
+      {/* 批量新增群組/場景（從機專用） */}
+      <BatchAddGroupSceneModal
+        stateKey={batchGs}
+        onClose={()=> setBatchGs(null)}
+        onSubmit={(hostId, unitId, s, e, st)=> addGsBatch(hostId, unitId, s, e, st)}
+      />
 
       <BatchAddSiteHostsModal
         site={site}
@@ -818,3 +1006,90 @@ function DimValueInput({ hostId, unit, ch, onSend }:{ hostId:string; unit:number
     />
   )
 }
+
+// 批量新增群組/場景（從機子表格用）
+function BatchAddGroupSceneModal({ stateKey, onClose, onSubmit }:{ stateKey: { hostId: string; unitId: number } | null; onClose: ()=>void; onSubmit: (hostId: string, unitId: number, start: number, end: number, step: number)=>void }) {
+  const [start, setStart] = useState<number>(1)
+  const [end, setEnd] = useState<number>(1)
+  const [step, setStep] = useState<number>(1)
+  const can = !!stateKey && start>=1 && end>=1 && step>=1
+  return (
+    <Modal isOpen={!!stateKey} onClose={onClose} title="批量新增群組/場景" maxWidth={520}>
+      <div className="col" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
+          <div className="col" style={{ width: 150 }}>
+            <div className="text-muted" style={{ marginBottom: 4 }}>編號起</div>
+            <NumberInput value={start} min={1} max={255} step={1} onChange={(v)=> setStart(Number(v))} />
+          </div>
+          <div className="col" style={{ width: 150 }}>
+            <div className="text-muted" style={{ marginBottom: 4 }}>編號迄</div>
+            <NumberInput value={end} min={1} max={255} step={1} onChange={(v)=> setEnd(Number(v))} />
+          </div>
+          <div className="col" style={{ width: 150 }}>
+            <div className="text-muted" style={{ marginBottom: 4 }}>累加間隔</div>
+            <NumberInput value={step} min={1} max={255} step={1} onChange={(v)=> setStep(Number(v))} />
+          </div>
+        </div>
+        <div className="row" style={{ justifyContent:'flex-end', gap:8 }}>
+          <Button className="btn--outline" onClick={onClose}>關閉</Button>
+          <Button disabled={!can} onClick={()=>{ if (!stateKey) return; onSubmit(stateKey.hostId, stateKey.unitId, start, end, step); onClose() }}>新增</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ===== 內部狀態與元件：三層（全域/主機/從機）快速選單 + 場景指派 =====
+// 全域快速選單（受控）
+function GlobalQuickSelectors({ value, onChange }:{ value: { group?: string; scene?: string }; onChange: (mode:'group'|'scene', value:string)=>void }){
+  const groupOptions = [{ label: '無', value: '' }, ...Array.from({length:32}).map((_,i)=>({ label: `群組${i+1}`, value: String(i+1) }))]
+  return (
+    <div className="row" style={{ gap:8, alignItems:'center' }}>
+      <Select size="sm" placeholder="群組寸動" value={(value.group ?? '') as any} onChange={(v)=> onChange('group', v)} options={groupOptions} />
+    </div>
+  )
+}
+
+// 將場景指派到特定群組（同一從機內唯一）：以現有 Modal 呈現複選，不新增組件
+function SceneAssign({ hostId, unitId, rows, targetIndex, mapping, onChange }:{ hostId:string; unitId:number; rows: { id:string; index:number }[]; targetIndex:number; mapping: Record<number, number[]>; onChange:(next:Record<number, number[]>)=>void }){
+  const [open, setOpen] = useState(false)
+  const allIdx = useMemo(()=> rows.map(r=>r.index).sort((a,b)=>a-b), [rows])
+  const current = mapping[targetIndex] || []
+  const [draft, setDraft] = useState<number[]>(current)
+  useEffect(()=>{ if (open) setDraft(current) }, [open])
+  const toggle = (idx:number) => setDraft(prev=> prev.includes(idx) ? prev.filter(x=>x!==idx) : [...prev, idx])
+  const apply = () => {
+    // 確保唯一性：同一場景只能屬於一個群組
+    const next: Record<number, number[]> = {}
+    for (const [gStr, list] of Object.entries(mapping)) next[Number(gStr)] = list.filter(x=> !draft.includes(x))
+    next[targetIndex] = draft.slice().sort((a,b)=>a-b)
+    onChange(next)
+    setOpen(false)
+  }
+  return (
+    <>
+      <button className="icon-btn" title={`指派場景到群組${targetIndex}`} onClick={()=> setOpen(true)}>
+        <IconPlus />
+      </button>
+      <Modal isOpen={open} onClose={()=> setOpen(false)} title={`指派場景給群組 ${targetIndex}`} maxWidth={520}>
+        <div className="col" style={{ gap:10 }}>
+          <div className="text-muted">選擇要歸屬於此群組的場景（複選）。</div>
+          <div className="col" style={{ gap:6, maxHeight: 260, overflowY:'auto' }}>
+            {allIdx.map(idx => (
+              <label key={idx} className="row" style={{ gap:8, alignItems:'center' }}>
+                <input type="checkbox" checked={draft.includes(idx)} onChange={()=> toggle(idx)} />
+                <span>場景{idx}</span>
+              </label>
+            ))}
+            {allIdx.length===0 && <div className="text-muted">尚無可選場景</div>}
+          </div>
+          <div className="row" style={{ justifyContent:'flex-end', gap:8 }}>
+            <Button className="btn--outline" onClick={()=> setOpen(false)}>取消</Button>
+            <Button onClick={apply}>套用</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}
+ 

@@ -17,6 +17,8 @@ export default function App() {
   { /* Transparent Forward page removed */ }
   <Route path="/modbus/serial-spy" element={<SerialSpy />} />
   <Route path="/sites" element={<SitesManager />} />
+  {/* 防止存取已停用的狀態頁 */}
+  <Route path="/sites/__status__" element={<Navigate to="/sites" replace />} />
   <Route path="/sites/new" element={<SitesManager mode="create" />} />
   <Route path="/sites/:id" element={<SitesManager />} />
 

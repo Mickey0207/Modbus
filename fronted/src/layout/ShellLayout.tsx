@@ -4,14 +4,14 @@ import SiderGroup from './SiderGroup'
 import { IconGauge, IconGrid, IconLink, IconUsb } from '@/components/icons'
 import { Button } from '@/components/index'
 import useHosts from '@/hooks/useHosts'
-import { useMessages } from '@/api/contexts/MessagesContext'
+import { useMessages } from '@/contexts/MessagesContext'
 import ReadHoldingRegistersModal from '@/layout/modals/ReadHoldingRegistersModal'
 import WriteSingleRegisterModal from '@/layout/modals/WriteSingleRegisterModal'
 import ReadHoldingRegistersSlaveModal from '@/layout/modals/ReadHoldingRegistersSlaveModal'
 import WriteSingleRegisterSlaveModal from '@/layout/modals/WriteSingleRegisterSlaveModal'
 import SystemLogsModal from '@/layout/modals/SystemLogsModal'
 import * as SitesApi from '@/api/sites/service'
-import { flush } from '@/api/modbus/queue'
+import { flush } from '@/api/modbus'
 import { writeSingleRegister } from '@/api/modbus/operations'
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
@@ -21,8 +21,6 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
 
   const [readOpen, setReadOpen] = useState(false)
   const [writeOpen, setWriteOpen] = useState(false)
-  const [openWeb, setOpenWeb] = useState(false)
-  const [openPoll, setOpenPoll] = useState(false)
   const [openDb, setOpenDb] = useState(false)
   const [openDbMb, setOpenDbMb] = useState(false)
   const [openDbDb, setOpenDbDb] = useState(false)
@@ -36,14 +34,11 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
 
   // 跑馬燈動畫控制
   // 每個頻道分別觸發 bump 動畫
-  const [bumpWeb, setBumpWeb] = useState(false)
-  const [bumpPoll, setBumpPoll] = useState(false)
+  // 顶部資訊：已移除 web 與 modbusPoll 頻道的顯示
   const [bumpSend, setBumpSend] = useState(false)
   const [bumpDb, setBumpDb] = useState(false)
   const [bumpDbMb, setBumpDbMb] = useState(false)
   const [bumpDbDb, setBumpDbDb] = useState(false)
-  useEffect(()=>{ if (!last.web?.id) return; setBumpWeb(true); const t=setTimeout(()=>setBumpWeb(false),420); return ()=>clearTimeout(t) }, [last.web?.id])
-  useEffect(()=>{ if (!last.modbusPoll?.id) return; setBumpPoll(true); const t=setTimeout(()=>setBumpPoll(false),420); return ()=>clearTimeout(t) }, [last.modbusPoll?.id])
   useEffect(()=>{ if (!last.dbPollMb?.id) return; setBumpDbMb(true); const t=setTimeout(()=>setBumpDbMb(false),420); return ()=>clearTimeout(t) }, [last.dbPollMb?.id])
   useEffect(()=>{ if (!last.dbPollDb?.id) return; setBumpDbDb(true); const t=setTimeout(()=>setBumpDbDb(false),420); return ()=>clearTimeout(t) }, [last.dbPollDb?.id])
   useEffect(()=>{ if (!last.modbusSend?.id) return; setBumpSend(true); const t=setTimeout(()=>setBumpSend(false),420); return ()=>clearTimeout(t) }, [last.modbusSend?.id])
@@ -78,10 +73,52 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
     }
   }, [pathname])
 
+  // 首次載入：為三個系統資訊頻道加入一條「真實格式」的模擬訊息
+  useEffect(() => {
+    // DB 頻道：模擬一筆更新語意
+    try {
+      push({
+        channel: 'dbPollDb',
+        level: 'info',
+        text: "DB UPDATE site_sw_hosts (connected)",
+        db: { table: 'site_sw_hosts', op: 'update', columns: ['connected'], values: { connected: true }, where: "id='host-001'" },
+        hostId: 'host-001',
+        target: 'host'
+      })
+    } catch {}
+    // Modbus 傳送：模擬一筆 0x06 寫入成功
+    try {
+      push({
+        channel: 'modbusSend',
+        level: 'success',
+        text: 'WRITE 0x06：host-001 @40001 = 1234',
+        ok: true,
+        hostId: 'host-001',
+        action: 'write',
+        target: 'host',
+        modbus: { fc: 0x06, address: 40001, values: [1234] }
+      })
+    } catch {}
+    // Modbus 接收：模擬一筆 0x03 讀取成功（帶回傳值）
+    try {
+      push({
+        channel: 'dbPollMb',
+        level: 'success',
+        text: 'READ 0x03：host-001 #1 @41000 x2 -> [100,200]',
+        ok: true,
+        hostId: 'host-001',
+        slaveAddr: 1,
+        action: 'read',
+        target: 'slave',
+        modbus: { fc: 0x03, address: 41000, quantity: 2, values: [100, 200] }
+      })
+    } catch {}
+  }, [])
+
   // Flush queued modbus writes once a host becomes connected
   useEffect(()=>{
     const connectedMap = new Map(hosts.map(h => [h.id, !!h.connected]))
-    flush((id)=>!!connectedMap.get(id), async (id, addr, val)=>{
+    flush((id: string)=>!!connectedMap.get(id), async (id: string, addr: number, val: number)=>{
       try {
         // 先投遞「送出」到 Modbus輪詢（不含結果）
         try { push({ channel: 'modbusPoll', level: 'info', text: `佇列寫出：${id} @${addr} = ${val}`, hostId: id, action: 'write', ok: undefined, target: 'host', modbus: { fc: 0x06, address: addr, values: [val] } }) } catch {}
@@ -109,7 +146,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
             items={[{ to: '/status', label: '狀態/寸動', end: true, icon: <IconGauge /> }]}
           />
           <SiderGroup
-            title="案場管理(開關/亮度)"
+            title="案場管理"
             icon={<IconGrid />}
             items={siteItems}
           />
@@ -128,24 +165,6 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         <header className="topbar two-rows">
           {/* 第一行：系統資訊 */}
           <div className="topbar-row topbar-info" style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <div className="topbar-pill ticker pill--web" role="button" onClick={()=>setOpenWeb(true)} title="系統資訊(網頁輪詢)">
-              <span style={{ opacity:.75 }}>網頁輪詢</span>
-              <span className={"mono ticker-text" + (bumpWeb ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
-                {last.web?.text || '—'}
-              </span>
-            </div>
-            <div className="topbar-pill ticker pill--poll" role="button" onClick={()=>setOpenPoll(true)} title="系統資訊(Modbus輪詢)">
-              <span style={{ opacity:.75 }}>Modbus輪詢</span>
-              <span className={"mono ticker-text" + (bumpPoll ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
-                {last.modbusPoll?.text || '—'}
-              </span>
-            </div>
-            <div className="topbar-pill ticker pill--db" role="button" onClick={()=>setOpenDbMb(true)} title="系統資訊(資料庫輪詢 Modbus)">
-              <span style={{ opacity:.75 }}>資料庫輪詢(Modbus)</span>
-              <span className={"mono ticker-text" + (bumpDbMb ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
-                {last.dbPollMb?.text || '—'}
-              </span>
-            </div>
             <div className="topbar-pill ticker pill--db" role="button" onClick={()=>setOpenDbDb(true)} title="系統資訊(資料庫輪詢 DB)">
               <span style={{ opacity:.75 }}>資料庫輪詢(DB)</span>
               <span className={"mono ticker-text" + (bumpDbDb ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
@@ -156,6 +175,12 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
               <span style={{ opacity:.75 }}>Modbus傳送</span>
               <span className={"mono ticker-text" + (bumpSend ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
                 {last.modbusSend?.text || '—'}
+              </span>
+            </div>
+            <div className="topbar-pill ticker pill--db" role="button" onClick={()=>setOpenDbMb(true)} title="系統資訊(Modbus接收)">
+              <span style={{ opacity:.75 }}>Modbus接收</span>
+              <span className={"mono ticker-text" + (bumpDbMb ? ' ticker-bump' : '')} style={{ whiteSpace:'nowrap', display:'inline-block' }}>
+                {last.dbPollMb?.text || '—'}
               </span>
             </div>
           </div>
@@ -181,9 +206,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
   <WriteSingleRegisterModal open={writeOpen} onClose={()=>setWriteOpen(false)} hosts={hosts} push={pushSend} />
   <ReadHoldingRegistersSlaveModal open={readSlaveOpen} onClose={()=>setReadSlaveOpen(false)} hosts={hosts} push={pushSend} />
   <WriteSingleRegisterSlaveModal open={writeSlaveOpen} onClose={()=>setWriteSlaveOpen(false)} hosts={hosts} push={pushSend} />
-  <SystemLogsModal open={openWeb} onClose={()=>setOpenWeb(false)} channel="web" title="系統資訊（網頁輪詢）" />
-  <SystemLogsModal open={openPoll} onClose={()=>setOpenPoll(false)} channel="modbusPoll" title="系統資訊（Modbus輪詢）" />
-  <SystemLogsModal open={openDbMb} onClose={()=>setOpenDbMb(false)} channel="dbPollMb" title="系統資訊（資料庫輪詢 Modbus）" />
+  <SystemLogsModal open={openDbMb} onClose={()=>setOpenDbMb(false)} channel="dbPollMb" title="系統資訊（Modbus接收）" />
   <SystemLogsModal open={openDbDb} onClose={()=>setOpenDbDb(false)} channel="dbPollDb" title="系統資訊（資料庫輪詢 DB）" />
   <SystemLogsModal open={openSend} onClose={()=>setOpenSend(false)} channel="modbusSend" title="系統資訊（Modbus傳送）" />
       </main>

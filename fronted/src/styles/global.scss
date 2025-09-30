@@ -152,6 +152,12 @@ body { margin: 0; color: var(--text); background: radial-gradient(1200px 800px a
 .light-btn.on { background: radial-gradient(closest-side, rgba(110,231,183,.9), rgba(110,231,183,.2) 70%, rgba(110,231,183,.08)); border-color: rgba(110,231,183,.6); box-shadow: 0 0 14px rgba(110,231,183,.45), inset 0 0 6px rgba(255,255,255,.35); filter: saturate(1.2) brightness(1.05); }
 .light-btn.on::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; box-shadow: 0 0 18px rgba(110,231,183,.5), 0 0 30px rgba(110,231,183,.35); pointer-events: none; }
 
+/* color variants for light button glow */
+.light-btn.on.yellow { background: radial-gradient(closest-side, rgba(250, 204, 21, .95), rgba(250, 204, 21, .22) 70%, rgba(250, 204, 21, .10)); border-color: rgba(250, 204, 21, .7); box-shadow: 0 0 14px rgba(250, 204, 21, .55), inset 0 0 6px rgba(255,255,255,.35); }
+.light-btn.on.yellow::after { box-shadow: 0 0 18px rgba(250, 204, 21, .65), 0 0 32px rgba(250, 204, 21, .45); }
+.light-btn.on.red { background: radial-gradient(closest-side, rgba(239, 68, 68, .95), rgba(239, 68, 68, .22) 70%, rgba(239, 68, 68, .10)); border-color: rgba(239, 68, 68, .7); box-shadow: 0 0 14px rgba(239, 68, 68, .55), inset 0 0 6px rgba(255,255,255,.35); }
+.light-btn.on.red::after { box-shadow: 0 0 18px rgba(239, 68, 68, .65), 0 0 32px rgba(239, 68, 68, .45); }
+
 /* wider action column when placing 8 lights */
 .smart-table .col-actions.lights { width: 420px; }
 
