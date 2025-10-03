@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { IconEye, IconEdit, IconTrash } from '@/components/icons'
+import { IconEye, IconEdit, IconTrash } from '@/components/common/icons'
 
 export type Column<T> = {
   key: keyof T | string

@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Select, SmartTable, Button, Badge, Input, NumberInput } from '@/components'
-import { IconCopy, IconEye, IconEdit, IconTrash } from '@/components/icons'
+import { IconCopy, IconEye, IconEdit, IconTrash } from '@/components/common/icons'
 import { readHoldingRegisters } from '@/api/modbus/operations'
 
 type Host = { id: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 
-import { useMessages } from '@/contexts/MessagesContext'
+import { useMessages } from '@/components/contexts/MessagesContext'
 
 export default function ReadHoldingRegistersModal({ open, onClose, hosts, push }: { open: boolean; onClose: () => void; hosts: Host[]; push: (lvl: 'info'|'success'|'warning'|'error', text: string) => void }) {
   const [selected, setSelected] = useState('')

@@ -10,10 +10,11 @@
   "server": "set PORT=5002; node ./server/src/index.js",
     "server:dev": "nodemon",
     "dev:server": "npm run server:dev",
-    "fronted": "npm run dev --prefix ./fronted",
-    "dev:fronted": "npm run dev --prefix ./fronted",
-    "fronted:build": "npm run build --prefix ./fronted",
-    "fronted:preview": "npm run preview --prefix ./fronted",
+    "fronted": "vite",
+    "dev:fronted": "vite",
+    "fronted:typecheck": "tsc --noEmit -p .",
+    "fronted:build": "npm run fronted:typecheck && vite build",
+    "fronted:preview": "vite preview",
   "web:dev": "concurrently \"npm:server:dev\" \"npm:fronted\"",
   "web:dev:all": "concurrently --continue-on-error -n server,fronted,drizzle -c yellow,cyan,magenta \"npm run server:dev\" \"npm run fronted\" \"node scripts/drizzle-studio.js\"",
   "start:all": "concurrently -n api,fronted,drizzle -c yellow,cyan,magenta \"npm:server:dev\" \"npm:fronted\" \"node scripts/drizzle-studio.js\"",
@@ -36,8 +37,8 @@
     "dist": "npm run build",
     "rebuild:node": "npm rebuild better-sqlite3 --update-binary",
     "rebuild:electron": "electron-builder install-app-deps",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:generate": "cross-env DRIZZLE_CONFIG=./Package/drizzle.config.ts drizzle-kit generate",
+    "db:migrate": "cross-env DRIZZLE_CONFIG=./Package/drizzle.config.ts drizzle-kit migrate"
   },
   "keywords": [
     "modbus",
@@ -53,7 +54,10 @@
     "drizzle-orm": "^0.44.5",
     "express": "^4.18.2",
     "modbus-serial": "^8.0.17",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
@@ -62,7 +66,15 @@
     "electron-builder": "^26.0.12",
     "electron-reload": "^2.0.0-alpha.1",
     "nodemon": "^3.0.1",
-    "wait-on": "^9.0.1"
+    "wait-on": "^9.0.1",
+    "@types/node": "^24.6.2",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "sass": "^1.77.8",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.8",
+    "cross-env": "^7.0.3"
   },
   "postinstall": "electron-builder install-app-deps",
   "build": {

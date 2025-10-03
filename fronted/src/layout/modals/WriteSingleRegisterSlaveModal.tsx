@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { Modal, Select, Button, NumberInput, SmartTable } from '@/components'
 import { writeSingleRegister } from '@/api/modbus/operations'
-import { useMessages } from '@/contexts/MessagesContext'
+import { useMessages } from '@/components/contexts/MessagesContext'
 
 type Host = { id: string; name?: string; ip?: string; port?: number; unitId?: number; connected: boolean }
 

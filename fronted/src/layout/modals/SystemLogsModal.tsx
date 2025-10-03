@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { Modal, SmartTable, Select, Button, LightButton } from '@/components'
-import { useMessages, type MsgChannel } from '@/contexts/MessagesContext'
+import { useMessages, type MsgChannel } from '@/components/contexts/MessagesContext'
 import * as SitesApi from '@/api/sites/service'
 
 export default function SystemLogsModal({ open, onClose, channel, title }:{ open: boolean; onClose: () => void; channel: MsgChannel; title: string }) {

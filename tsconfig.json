@@ -1,0 +1,24 @@
+{
+  "extends": "./Package/tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "noEmit": true,
+    "composite": false,
+    "paths": {
+      "@/components": ["fronted/src/components/index.ts"],
+      "@/components/*": ["fronted/src/components/*"],
+      "@/modules/*": ["fronted/src/modules/*"],
+      "@/layout/*": ["fronted/src/layout/*"],
+      "@/styles/*": ["fronted/src/styles/*"],
+      "@/pages/*": ["fronted/src/pages/*"],
+      "@/contexts/*": ["fronted/src/contexts/*"],
+      "@/api": ["External_mock/api/index.ts"],
+      "@/api/*": ["External_mock/api/*"],
+      "@mock": ["External_mock/api/index.ts"],
+      "@mock/*": ["External_mock/api/*"],
+      "@/hooks/*": ["fronted/src/hooks/*"]
+    }
+  },
+  "include": ["fronted/src", "External_mock/api/**/*.ts"]
+}

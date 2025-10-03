@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Button, SmartTable, InlineEditableCell, Select, Modal, NumberInput, Input, TextBlock, LightButton } from '@/components/index'
-import { IconTrash, IconPlus, IconLink } from '@/components/icons'
+import { IconTrash, IconPlus, IconLink } from '@/components/common/icons'
 import useHosts from '@/hooks/useHosts'
 import { writeOrQueue, sw8MaskAddress, dimMaskAddress, dimValueAddress } from '@/api/modbus'
 // Switch to DB-backed endpoints
 import * as SitesApi from '@/api/sites/service'
 import type { DbSite as Site, DbHost as Host, DbSlave as Slave, DbSiteVersion as SiteVersion } from '@/api/sites/service'
-import { useMessages } from '@/contexts/MessagesContext'
+import { useMessages } from '@/components/contexts/MessagesContext'
 import { pollStatuses } from '@/api/status'
 
 function useSites() {

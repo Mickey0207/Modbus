@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, SmartTable, LightButton, Select, Input, InlineEditableCell, NumberInput, Modal } from '@/components/index'
-import { IconLink, IconTrash, IconPlus } from '@/components/icons'
+import { IconLink, IconTrash, IconPlus } from '@/components/common/icons'
 import useHosts from '@/hooks/useHosts'
 import { upsertHost, deleteHost, type HostConfig } from '@/api/hosts/registry'
 import { writeOrQueue } from '@/api/modbus/operations'
 import { pollStatuses, listSlavesByHost, setSlaveType } from '@/api'
 import { sw8MaskAddress, dimMaskAddress, dimValueAddress } from '@/api/modbus'
-import { useMessages, useChannelLoggers } from '@/contexts/MessagesContext'
+import { useMessages, useChannelLoggers } from '@/components/contexts/MessagesContext'
 
 export default function MasterSlaveStatus() {
   const [pollMs, setPollMs] = useState<number>(0)
