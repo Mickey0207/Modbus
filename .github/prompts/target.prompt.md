@@ -6,7 +6,15 @@ mode: agent
 
 本文同步會議結論的已定案內容，持續擴充其餘章節（TBD）。
 
+重要：本工具僅用於協助對設備進行 Modbus 讀寫操作，不使用任何「永久保存機制」。程式（或瀏覽器）關閉後，所有狀態與暫存參數即清空；不使用資料庫、檔案、LocalStorage、IndexedDB 或 Cookie 等跨重啟保存。
+
 ---
+
+## 保存政策（無持久化）
+
+- 無任何持久化：不寫入資料庫、檔案或瀏覽器儲存（LocalStorage/IndexedDB/Cookie）。
+- 執行期暫存：使用中的連線參數、站號、型別、遮罩值等，僅存在記憶體；關閉程式或關閉瀏覽器即遺失。
+- 文件中的「資料表」章節僅作為「邏輯與位址映射參考」，不代表實作中存在資料庫或任意持久結構。
 
 ### 1) 設備註冊（主機暫存器，FC03/FC06）
 
@@ -24,17 +32,6 @@ mode: agent
 	- 設定：將站號 1 設為 4CH → 對位址 12001 寫入 2（FC06）。
 		- PDU（示意）：06 | 0x2E E1 | 0x00 02（12001 十進=0x2EE1；值 2=0x0002）。
 	- 讀回：讀取站號 1 類型 → 對位址 12001 讀 1 筆（FC03）。
-
-- 資料表（device_register_map）
-	- 欄位建議：
-		- host_model
-		- base_addr: int  // 12000（十進）
-		- max_units: int  // 255（支援站號 0..254）
-		- last_addr: int  // 12254（= 12000 + (max_units - 1)）
-		- read_fc: smallint  // 3
-		- write_fc: smallint // 6
-		- type_encoding_json: json // 例如 { "SL_SW8CH": 1, "SL_4CH": 2 }
-		- note
 
 - 驗證規則
 	- 可寫入的類型值僅 {1,2}；越界視為錯誤。
@@ -68,18 +65,6 @@ mode: agent
 		- PDU：03 | 0x07 D8 | 0x00 01
 	- 寫入 4CH（僅低 4 位）：unitId=2，地址 2016(0x07E0)，值 0x000F（全開）
 		- PDU：06 | 0x07 E0 | 0x00 0F
-
-- 資料表（switch_register_map）
-	- 欄位建議：
-		- base_addr: int // 2000（十進）
-		- end_addr: int  // 4032（十進）
-		- step_per_unit: int // 8（每個站號位址遞增 8）
-		- read_fc: smallint // 3
-		- write_fc: smallint // 6
-		- bit_width_sw8: smallint // 8（有效值 0..255/0xFF）
-		- bit_width_4ch: smallint // 4（有效值 0..15/0x0F）
-		- bit_order: enum('LSB_RIGHT') // 低位在最右
-		- note
 
 - 驗證規則
 	- unitId 0..254（若要含 255，end_addr 擴至 4040）。
@@ -126,11 +111,6 @@ mode: agent
 	- 回覆：19-0F-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-CRC
 		- unitId=0x19；group1=0x0F；group2..group16=0x00；CRC=1B
 
-- 資料表（group_function_map）補充欄位
-	- fc_slave_read: smallint // 0x17
-	- response_layout: json // {"bytes": 18, "order": ["unitId", "group[16]", "crc"]}
-	- 備註：回覆無 function/type/range，需由請求上下文綁定。
-
 	2) functionCode  (1B) 固定 0x19（寫入群組）
 	3) slaveType     (1B) 0x01=8CH；0x02=4CH
 	4) groupRange    (1B) 0x01 → 群組 1..16；0x02 → 群組 17..32
@@ -167,16 +147,6 @@ mode: agent
 	6) 計算 CRC-8（參數待鎖定）附於結尾。
 	7) 透過 TCP→485 下發自定義 PDU（隧穿）。
 
-- 資料表（group_function_map）建議欄位
-	- slave_type: enum('SL_SW8CH','SL_4CH')
-	- fc_slave_write: smallint // 0x19
-	- range_encoding: json // {"1..16": 0x01, "17..32": 0x02}
-	- groups_per_range: smallint // 16
-	- bytes_per_group: smallint // 1
-	- value_constraints: json // {"SL_SW8CH": [0,255], "SL_4CH": [0,15]}
-	- crc_kind: enum('CRC8_POLY_0x07','CRC8_MAXIM','TBD') // 先標記 TBD
-	- note
-
 - 驗證
 	- unitId 0..254；groupRange ∈ {0x01,0x02}。
 	- 8CH 值域 0..255；4CH 僅低 4 位 0..15；越界錯誤。
@@ -188,7 +158,7 @@ mode: agent
 - 3) 群組設定（自定義 485 協議：讀出）
 - 4) 場景設定（自定義 485 協議）
 - 5) 範例命令與映射清單
-- 6) 系統資訊（DB CRUD 推播）
+- 6) 系統資訊（即時事件訊息；無持久化）
 - 7) 系統資訊（Modbus 傳送）
 - 8) 系統資訊（Modbus 接收）
-- 9) 自動讀取（3 秒循環與先後順序）
+- 9) 自動讀取（3 秒循環與先後順序；無持久化）

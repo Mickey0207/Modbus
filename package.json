@@ -1,125 +1,57 @@
 {
-  "name": "modbus-tcp-tool",
-  "version": "1.0.0",
-  "description": "Modbus TCP 工具 - Electron 桌面應用程式",
-  "main": "main.js",
-  "homepage": ".",
-  "scripts": {
-    "start": "electron .",
-  "dev": "set NODE_ENV=development; set UI_MODE=server; set PORT=5002; electron .",
-  "server": "set PORT=5002; node ./server/src/index.js",
-    "server:dev": "nodemon",
-    "dev:server": "npm run server:dev",
-    "fronted": "vite",
-    "dev:fronted": "vite",
-    "fronted:typecheck": "tsc --noEmit -p .",
-    "fronted:build": "npm run fronted:typecheck && vite build",
-    "fronted:preview": "vite preview",
-  "web:dev": "concurrently \"npm:server:dev\" \"npm:fronted\"",
-  "web:dev:all": "concurrently --continue-on-error -n server,fronted,drizzle -c yellow,cyan,magenta \"npm run server:dev\" \"npm run fronted\" \"node scripts/drizzle-studio.js\"",
-  "start:all": "concurrently -n api,fronted,drizzle -c yellow,cyan,magenta \"npm:server:dev\" \"npm:fronted\" \"node scripts/drizzle-studio.js\"",
-  "drizzle:studio": "node scripts/drizzle-studio.js",
-    "db:upgrade": "node ./server/scripts/migrate-db.js",
-  
-  "db:prune:hosts": "node ./server/scripts/prune-legacy-db.js --drop-hosts",
-  "db:prune:drizzle": "node ./server/scripts/prune-legacy-db.js --drop-drizzle",
-    "dev:web": "npm run web:dev",
-    "electron": "electron .",
-  "electron-dev": "set NODE_ENV=development; set UI_MODE=server; set PORT=5002; electron .",
-  "electron-dev:server": "set NODE_ENV=development; set UI_MODE=server; set PORT=5002; electron .",
-  "electron-dev:vite": "set NODE_ENV=development; set UI_MODE=vite; set DEV_URL=http://localhost:5001; electron .",
-    "electron-dev:mem": "set NODE_ENV=development; set DISABLE_DB=1; electron .",
-    "electron-watch": "nodemon --watch main.js --watch server/src --watch public/ --exec \"electron .\"",
-    "build": "electron-builder",
-    "build-win": "electron-builder --win",
-    "build-mac": "electron-builder --mac",
-    "build-linux": "electron-builder --linux",
-    "dist": "npm run build",
-    "rebuild:node": "npm rebuild better-sqlite3 --update-binary",
-    "rebuild:electron": "electron-builder install-app-deps",
-    "db:generate": "cross-env DRIZZLE_CONFIG=./Package/drizzle.config.ts drizzle-kit generate",
-    "db:migrate": "cross-env DRIZZLE_CONFIG=./Package/drizzle.config.ts drizzle-kit migrate"
-  },
-  "keywords": [
-    "modbus",
-    "tcp",
-    "industrial",
-    "automation"
-  ],
+  "name": "modbus-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React + Vite + Electron scaffold",
+  "main": "dist-electron/main/index.js",
   "author": "",
   "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "package": "npm run build && npx electron-builder --dir",
+    "package:win": "npm run build && npx electron-builder --win",
+    "package:nsis": "npm run build && npx electron-builder --win nsis"
+  },
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
-    "cors": "^2.8.5",
-    "drizzle-orm": "^0.44.5",
-    "express": "^4.18.2",
-    "modbus-serial": "^8.0.17",
-    "ws": "^8.14.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "drizzle-kit": "^0.31.4",
-    "electron": "^38.1.2",
-    "electron-builder": "^26.0.12",
-    "electron-reload": "^2.0.0-alpha.1",
-    "nodemon": "^3.0.1",
-    "wait-on": "^9.0.1",
-    "@types/node": "^24.6.2",
-    "@types/react": "^18.3.5",
+    "@types/node": "^20.14.11",
+    "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.3",
-    "sass": "^1.77.8",
-    "typescript": "^5.4.5",
-    "vite": "^5.4.8",
-    "cross-env": "^7.0.3"
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.0",
+    "vite-plugin-electron": "^0.28.0"
   },
-  "postinstall": "electron-builder install-app-deps",
   "build": {
-    "appId": "com.modbus.tcp.tool",
-    "productName": "Modbus TCP 工具",
+    "appId": "com.example.modbus",
+    "productName": "ModbusApp",
+    "asar": true,
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
-      "main.js",
-      "server/**/*",
-      "fronted/dist/**/*",
-      "public/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "server/data",
-        "to": "server/data",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "asarUnpack": [
-      "node_modules/better-sqlite3/**"
+      "dist/**",
+      "dist-electron/**",
+      "!**/*.map"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }

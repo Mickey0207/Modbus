@@ -1,24 +1,20 @@
 {
-  "extends": "./Package/tsconfig.base.json",
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "baseUrl": ".",
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "noEmit": true,
-    "composite": false,
-    "paths": {
-      "@/components": ["fronted/src/components/index.ts"],
-      "@/components/*": ["fronted/src/components/*"],
-      "@/modules/*": ["fronted/src/modules/*"],
-      "@/layout/*": ["fronted/src/layout/*"],
-      "@/styles/*": ["fronted/src/styles/*"],
-      "@/pages/*": ["fronted/src/pages/*"],
-      "@/contexts/*": ["fronted/src/contexts/*"],
-      "@/api": ["External_mock/api/index.ts"],
-      "@/api/*": ["External_mock/api/*"],
-      "@mock": ["External_mock/api/index.ts"],
-      "@mock/*": ["External_mock/api/*"],
-      "@/hooks/*": ["fronted/src/hooks/*"]
-    }
+    "jsx": "react-jsx",
+    "types": ["node"]
   },
-  "include": ["fronted/src", "External_mock/api/**/*.ts"]
+  "include": [
+    "src",
+    "electron",
+    "vite.config.ts"
+  ]
 }
