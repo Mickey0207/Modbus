@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => ({
           build: {
             outDir: 'dist-electron/main',
             rollupOptions: {
+              external: ['serialport'],
               output: { entryFileNames: 'index.js' },
             },
           },

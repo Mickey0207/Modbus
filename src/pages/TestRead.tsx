@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, Space, Select, InputNumber, Button, Typography, Input, Tag } from 'antd'
+import { Card, Space, Select, InputNumber, Button, Typography, Input, Tag, message } from 'antd'
 
 const { Text, Title } = Typography
 
@@ -35,6 +35,17 @@ export default function TestRead(){
   const [chunks, setChunks] = useState<string[]>([])
   const [raw, setRaw] = useState('')
   const [tid, setTid] = useState(1)
+  // ===== USB-485 (Serial) =====
+  const [serList, setSerList] = useState<Array<{ path:string; friendlyName?:string; manufacturer?:string }>>([])
+  const [serPath, setSerPath] = useState<string>('')
+  const [baud, setBaud] = useState<number>(9600)
+  const [idleMs, setIdleMs] = useState<number>(80)
+  const [serOpen, setSerOpen] = useState(false)
+  const [serStatus, setSerStatus] = useState<'idle'|'open'|'close'|'error'>('idle')
+  const [serMsg, setSerMsg] = useState('')
+  const [serListData, setSerListData] = useState<Array<{ t:number; hex:string; len:number }>>([])
+  // 傳輸方式：TCP 透明監視 or USB-485
+  const [transport, setTransport] = useState<'tcp'|'serial'>('tcp')
 
   type Hist = { t:number; tag:string; tx:string; rx:string; chunks?:string[] }
   const [history, setHistory] = useState<Hist[]>([])
@@ -42,6 +53,35 @@ export default function TestRead(){
   const emitLog = (tag:string, tx:string, rx:string, cks?:string[]) => {
     try { window.dispatchEvent(new CustomEvent('modbus:log', { detail: { tag, tx, rx, t: Date.now() } })) } catch {}
     setHistory(prev => [{ t:Date.now(), tag, tx, rx, chunks:cks }, ...prev].slice(0,200))
+  }
+
+  // Serial subscriptions
+  useMemo(()=>{
+    const offData = window.api?.onSerialData?.((e)=>{
+      if(e.path!==serPath) return
+      setSerListData(prev=> [{ t:e.t, hex:e.hex, len:e.len }, ...prev].slice(0,500))
+    })
+    const offStatus = window.api?.onSerialStatus?.((e)=>{
+      if(e.path!==serPath) return
+      setSerStatus(e.status); setSerMsg(e.message||''); setSerOpen(e.status==='open')
+    })
+    return ()=>{ try{ offData?.() }catch{}; try{ offStatus?.() }catch{} }
+  }, [serPath])
+
+  async function refreshSerial(){ const res = await window.api?.serialList?.(); if(res?.ok) setSerList(res.ports||[]) }
+  async function openSerial(){
+    if(!serPath) return;
+    const r = await window.api?.serialOpen?.(serPath, baud);
+    if(!r?.ok) { setSerStatus('error'); setSerMsg(r?.error||'open failed'); return }
+    // 設定空閒分幀時間（避免分段）
+    await window.api?.serialSetIdle?.(serPath, idleMs)
+  }
+  async function closeSerial(){ if(!serPath) return; await window.api?.serialClose?.(serPath); }
+  async function serialSend(hex:string){
+    if(!serOpen||!serPath) return;
+    const clean = (hex||'').replace(/[^0-9a-fA-F\s]/g,'').replace(/\s+/g,'').trim()
+    if(!clean || clean.length%2!==0){ message.error('HEX 格式不正確'); return }
+    await window.api?.serialWrite?.(serPath, clean)
   }
 
   // Monitor state
@@ -79,6 +119,17 @@ export default function TestRead(){
     emitLog('MON-TX', spaced(hex), '')
   }
 
+  async function sendByTransport(bytes:number[]){
+    const hex = toHex(bytes)
+    if(transport==='serial'){
+      if(!serOpen || !serPath){ message.error('請先開啟 USB-485 埠'); return }
+      await serialSend(hex)
+      emitLog('SER-TX', spaced(hex), '')
+    }else{
+      await send(bytes)
+    }
+  }
+
   async function sendRaw(){
     const clean = raw.replace(/[^0-9a-fA-F\s]/g,'').replace(/\s+/g,'').trim()
     if(!clean || clean.length%2!==0) return
@@ -99,6 +150,43 @@ export default function TestRead(){
     <div style={{ padding:16 }}>
       <Title level={3} style={{marginTop:0}}>讀取測試（場景/群組）</Title>
       <Space direction="vertical" size="large" style={{ width:'100%' }}>
+        <Card title="USB-485 (Serial)" size="small">
+          <Space wrap>
+            <Button onClick={refreshSerial}>刷新埠</Button>
+            <Select 
+              style={{width:280}}
+              placeholder="選擇序列埠"
+              value={serPath||undefined}
+              onChange={v=> setSerPath(v)}
+              options={serList.map(p=>({ value:p.path, label:`${p.path}${p.friendlyName? ' - '+p.friendlyName:''}` }))}
+            />
+            <span>Baud</span>
+            <InputNumber value={baud} min={1200} max={921600} step={300} onChange={v=> setBaud(v||9600)} />
+            <span>Idle(ms)</span>
+            <InputNumber value={idleMs} min={5} max={1000} step={5} onChange={async v=>{ const n=v||80; setIdleMs(n); if(serOpen && serPath) await window.api?.serialSetIdle?.(serPath, n) }} />
+            <Button type={serOpen? 'default':'primary'} onClick={serOpen? closeSerial: openSerial}>{serOpen? '關閉' : '開啟'}</Button>
+            <Tag color={serStatus==='open'?'success': serStatus==='error'?'error':'default'}>{serStatus==='idle'?'idle': serStatus}</Tag>
+            {serMsg && <span style={{color:'#64748b', fontSize:12}}>{serMsg}</span>}
+          </Space>
+          <div style={{marginTop:8, maxHeight:180, overflow:'auto', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
+            {serListData.length===0 ? <Text type="secondary">尚無資料</Text> : (
+              <div style={{display:'grid', gap:6}}>
+                {serListData.map((m,idx)=> (
+                  <div key={idx} style={{display:'flex', gap:8}}>
+                    <span style={{color:'#94a3b8', fontSize:12}}>{new Date(m.t).toLocaleTimeString()}</span>
+                    <Tag>RX</Tag>
+                    <code>{spaced(m.hex)}</code>
+                    <span style={{color:'#94a3b8', fontSize:12}}>[{m.len}B]</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <Space style={{marginTop:8}}>
+            <Input placeholder="HEX（例如：0a 17 01 01 4e）" value={raw} onChange={e=>setRaw(e.target.value)} style={{width:360}} />
+            <Button type="primary" onClick={()=> serialSend(raw)}>送出 HEX</Button>
+          </Space>
+        </Card>
         <Card title="連線設定" size="small">
           <Space wrap>
             <span>Host</span>
@@ -121,9 +209,11 @@ export default function TestRead(){
 
         <Card title="場景讀取 (0x18)" size="small">
           <Space wrap>
+            <span>傳輸</span>
+            <Select value={transport} onChange={v=> setTransport(v)} style={{width:140}} options={[{value:'tcp',label:'TCP 透明監視'},{value:'serial',label:'USB-485'}]} />
             <span>Range</span>
             <Select value={sceneRange} onChange={v=>setSceneRange(v)} style={{width:160}} options={[{value:1,label:'1..16'},{value:2,label:'17..32'},{value:3,label:'33..48'},{value:4,label:'49..64'}]} />
-            <Button type="primary" onClick={()=>send(sceneRead)}>讀取</Button>
+            <Button type="primary" onClick={()=>sendByTransport(sceneRead)}>讀取</Button>
             <Text code>{toHexSp(sceneRead)}</Text>
           </Space>
         </Card>
@@ -132,7 +222,7 @@ export default function TestRead(){
           <Space wrap>
             <span>Range</span>
             <Select value={groupRange} onChange={v=>setGroupRange(v)} style={{width:160}} options={[{value:1,label:'1..16'},{value:2,label:'17..32'}]} />
-            <Button type="primary" onClick={()=>send(groupRead)}>讀取</Button>
+            <Button type="primary" onClick={()=>sendByTransport(groupRead)}>讀取</Button>
             <Text code>{toHexSp(groupRead)}</Text>
           </Space>
         </Card>

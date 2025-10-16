@@ -2,6 +2,16 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'node:path'
 import net from 'node:net'
 import { promises as fs } from 'node:fs'
+// Lazy require serialport to avoid bundler/ESM interop issues at runtime
+let SerialPortLib: any = null
+function getSerial() {
+  if (!SerialPortLib) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const m = require('serialport')
+    SerialPortLib = { SerialPort: m.SerialPort }
+  }
+  return SerialPortLib
+}
 
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined
 
@@ -273,5 +283,94 @@ app.whenReady().then(() => {
     } catch (e: any) {
       return { ok: false, error: String(e?.message || e) }
     }
+  })
+
+  // ============ Serial (USB-485) ============
+  type SerKey = string
+  const serials = new Map<SerKey, any>()
+  const serialBuffers = new Map<SerKey, Buffer>()
+  const serialTimers = new Map<SerKey, NodeJS.Timeout>()
+  const serialIdleCfg = new Map<SerKey, number>()
+  const SERIAL_IDLE_MS_DEFAULT = 80 // flush a frame after ~80ms of silence
+  const serKeyOf = (senderId: number, path: string) => `${senderId}:${path}`
+
+  ipcMain.handle('serial:list', async () => {
+    try {
+  const { SerialPort } = getSerial()
+  const ports = await SerialPort.list()
+      return { ok: true, ports: ports.map(p=>({ path:p.path, friendlyName:(p as any).friendlyName, manufacturer:p.manufacturer })) }
+    } catch (e:any) { return { ok:false, error:String(e?.message||e) } }
+  })
+
+  ipcMain.handle('serial:open', async (evt, payload: { path: string; baudRate: number; idleMs?: number }) => {
+    try {
+      const { path, baudRate, idleMs } = payload || ({} as any)
+      const key = serKeyOf(evt.sender.id, path)
+      if (serials.has(key)) return { ok: true }
+  const { SerialPort } = getSerial()
+  const port = new SerialPort({ path, baudRate, autoOpen: false })
+      serials.set(key, port)
+      serialBuffers.set(key, Buffer.alloc(0))
+      serialIdleCfg.set(key, typeof idleMs === 'number' && idleMs >= 5 ? idleMs : SERIAL_IDLE_MS_DEFAULT)
+      const sendStatus = (status:'open'|'close'|'error', message?:string) => { try{ evt.sender.send('serial:status',{ path, status, message, t:Date.now() }) }catch{} }
+      const flushFrame = () => {
+        const acc = serialBuffers.get(key) || Buffer.alloc(0)
+        if (acc.length) {
+          try { evt.sender.send('serial:data', { path, hex: acc.toString('hex'), len: acc.length, t: Date.now() }) } catch {}
+          serialBuffers.set(key, Buffer.alloc(0))
+        }
+      }
+      const armIdle = () => {
+        const old = serialTimers.get(key)
+        if (old) clearTimeout(old)
+        const ms = serialIdleCfg.get(key) ?? SERIAL_IDLE_MS_DEFAULT
+        const h = setTimeout(() => { flushFrame() }, ms)
+        serialTimers.set(key, h)
+      }
+      port.on('open', ()=> sendStatus('open'))
+      port.on('data', (buf)=> {
+        const cur = serialBuffers.get(key) || Buffer.alloc(0)
+        serialBuffers.set(key, Buffer.concat([cur, buf]))
+        armIdle()
+      })
+      port.on('error', (err)=> { sendStatus('error', String(err?.message||err)); try{ port.close() }catch{} })
+      port.on('close', ()=> { try { flushFrame() } catch {}; sendStatus('close'); serials.delete(key); const t=serialTimers.get(key); if(t) clearTimeout(t); serialTimers.delete(key); serialBuffers.delete(key); serialIdleCfg.delete(key) })
+      await new Promise<void>((resolve, reject)=> port.open((err)=> err? reject(err): resolve()))
+      return { ok: true }
+    } catch (e:any) { return { ok:false, error:String(e?.message||e) } }
+  })
+
+  ipcMain.handle('serial:close', async (evt, payload:{ path:string }) => {
+    try {
+      const { path } = payload || ({} as any)
+      const key = serKeyOf(evt.sender.id, path)
+      const p = serials.get(key)
+      if (p) { await new Promise<void>((resolve)=> p.close(()=> resolve())); serials.delete(key) }
+      const t = serialTimers.get(key); if (t) clearTimeout(t); serialTimers.delete(key)
+      serialBuffers.delete(key); serialIdleCfg.delete(key)
+      return { ok: true }
+    } catch (e:any) { return { ok:false, error:String(e?.message||e) } }
+  })
+
+  ipcMain.handle('serial:set-idle', async (evt, payload:{ path:string; idleMs:number }) => {
+    try{
+      const { path, idleMs } = payload || ({} as any)
+      const key = serKeyOf(evt.sender.id, path)
+      if (!serials.has(key)) return { ok:false, error:'serial not open' }
+      serialIdleCfg.set(key, typeof idleMs === 'number' && idleMs >= 5 ? idleMs : SERIAL_IDLE_MS_DEFAULT)
+      return { ok:true }
+    }catch(e:any){ return { ok:false, error:String(e?.message||e) } }
+  })
+
+  ipcMain.handle('serial:write', async (evt, payload:{ path:string; hex:string }) => {
+    try {
+      const { path, hex } = payload || ({} as any)
+      const key = serKeyOf(evt.sender.id, path)
+      const p = serials.get(key)
+      if (!p) return { ok:false, error:'serial not open' }
+      const out = Buffer.from((hex||'').replace(/\s+/g,'') , 'hex')
+      await new Promise<void>((resolve, reject)=> p.write(out, (err)=> err? reject(err): resolve()))
+      return { ok: true }
+    } catch (e:any) { return { ok:false, error:String(e?.message||e) } }
   })
 })

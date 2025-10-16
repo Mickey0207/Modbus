@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
-import { Card, Input, Button, Select, Table, Space, Tag, Typography, Row, Col, InputNumber, Checkbox, Slider, Modal, message } from 'antd'
-import { PlusOutlined, DeleteOutlined, SaveOutlined, FolderOpenOutlined, ApiOutlined, BulbFilled } from '@ant-design/icons'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Card, Input, Button, Select, Table, Space, Tag, Typography, Row, Col, InputNumber, Checkbox, Slider, Modal, message, Tooltip, Switch } from 'antd'
+import { PlusOutlined, DeleteOutlined, SaveOutlined, FolderOpenOutlined, ApiOutlined, BulbFilled, SettingOutlined, EditOutlined } from '@ant-design/icons'
 
 const { TextArea } = Input
 const { Title, Text } = Typography
@@ -47,6 +47,307 @@ export default function Unified(){
   const [chNamesByUnit, setChNamesByUnit] = useState<Record<number, string[]>>({})
   const getChNames = (unit:number)=> chNamesByUnit[unit] || ['CH1','CH2','CH3','CH4']
   const [syncing, setSyncing] = useState(false)
+
+  // ===== Quick Switch (群組/場景，依規格位址直寫) =====
+  // 25400..25431 對應群組 1..32（寫 1 開、0 關）
+  // 24100..24147 場景 1..48 對應群組號（寫入群組編號）
+  // 20000 + (group-1)*48 + (scene-1) 寫 1 觸發該群組的該場景
+  const [quickGroupSel, setQuickGroupSel] = useState<number|undefined>(undefined)
+  const [quickSceneSel, setQuickSceneSel] = useState<number|undefined>(undefined)
+  const [quickGroupOn, setQuickGroupOn] = useState<boolean>(false)
+  const [quickSceneOn, setQuickSceneOn] = useState<boolean>(false)
+  const [autoOffOnSceneSel, setAutoOffOnSceneSel] = useState<boolean>(false)
+  const [autoOffOnGroupSel, setAutoOffOnGroupSel] = useState<boolean>(false)
+  // 觸發對象：已連線主機或全部
+  const [triggerTarget, setTriggerTarget] = useState<'_all'|string|undefined>(undefined) // host.id 或 '_all'
+  // 每台主機的場景→群組對應（長度 48；0 表未設定）
+  const [mappingByHost, setMappingByHost] = useState<Record<string, number[]>>({})
+  const [mappingNamesByHost, setMappingNamesByHost] = useState<Record<string, string[]>>({})
+  const [mappingBaseByHost, setMappingBaseByHost] = useState<Record<string, number[]>>({})
+  // Mapping table modal state
+  type MappingRow = { key:string; scene:number; group:number; name:string; editing?:boolean }
+  const [mapModalHostId, setMapModalHostId] = useState<string|undefined>(undefined)
+  const [mapRows, setMapRows] = useState<MappingRow[]>([])
+
+  function openMapModal(h:HostEntry){
+    const groups = mappingByHost[h.id] || []
+    const base = groups.length? groups.slice() : Array(48).fill(0)
+    const names = mappingNamesByHost[h.id] || []
+    const rows:MappingRow[] = []
+    for(let i=0;i<48;i++){
+      const g = groups[i] || 0
+      if(g>0){ rows.push({ key:`${i+1}`, scene:i+1, group:g, name:names[i]||'', editing:false }) }
+    }
+    setMapRows(rows)
+    setMapModalHostId(h.id)
+    setMappingBaseByHost(prev=> ({ ...prev, [h.id]: base }))
+  }
+  function closeMapModal(){ setMapModalHostId(undefined); setMapRows([]) }
+  function usedScenesSet(rows:MappingRow[]){ return new Set(rows.map(r=> r.scene)) }
+  function addMapRow(){
+    if(mapRows.length>=48){ message.info('已達 48 筆上限'); return }
+    const used = usedScenesSet(mapRows)
+    let next = 1; while(used.has(next) && next<=48) next++
+    if(next>48){ message.info('沒有可用的場景編號'); return }
+    setMapRows(prev=> [...prev, { key:`new-${Date.now()}`, scene: next, group: 1, name:'', editing:true }])
+  }
+  function updateMapRow(key:string, patch:Partial<MappingRow>){ setMapRows(prev=> prev.map(r=> r.key===key? { ...r, ...patch }: r)) }
+  function deleteMapRow(key:string){ setMapRows(prev=> prev.filter(r=> r.key!==key)) }
+
+  function openTriggerConfig(){
+    let tmpTarget: '_all'|string|undefined = triggerTarget
+    let tmpAutoScene = autoOffOnSceneSel
+    let tmpAutoGroup = autoOffOnGroupSel
+    const connected = hosts.filter(h=> connMap[h.id]==='ok')
+    Modal.confirm({
+      title: '選擇觸發對象（主機）',
+      content: (
+        <Space direction="vertical" style={{width:'100%'}}>
+          <Select
+            style={{width:'100%'}}
+            placeholder="選擇要發送的主機"
+            defaultValue={tmpTarget}
+            onChange={(v)=>{ tmpTarget = v as any }}
+            options={[{value:'_all', label:'全部主機'}, ...connected.map(h=>({ value:h.id, label:`${h.name} (${h.host}:${h.port})` }))]}
+          />
+          <Space>
+            <Checkbox defaultChecked={tmpAutoScene} onChange={e=>{ tmpAutoScene = e.target.checked }}>切換場景時自動關燈</Checkbox>
+            <Checkbox defaultChecked={tmpAutoGroup} onChange={e=>{ tmpAutoGroup = e.target.checked }}>切換群組時自動關燈</Checkbox>
+          </Space>
+          <Typography.Paragraph type="secondary" style={{margin:0}}>
+            之後按「開啟」會發送到此處選擇的主機（或全部）。
+          </Typography.Paragraph>
+        </Space>
+      ),
+      okText: '儲存',
+      onOk: ()=>{ setTriggerTarget(tmpTarget); setAutoOffOnSceneSel(tmpAutoScene); setAutoOffOnGroupSel(tmpAutoGroup) }
+    })
+  }
+
+  function getTargetHosts(): HostEntry[]{
+    const connected = hosts.filter(h=> connMap[h.id]==='ok')
+    if(triggerTarget==='_all') return connected
+    if(triggerTarget){ return connected.filter(h=> h.id===triggerTarget) }
+    return []
+  }
+
+  function ensureTarget(){
+    const th = getTargetHosts()
+    if(th.length===0){ message.info('請先於「觸發設定」選擇主機（或全部主機）且需為已連線狀態'); return false }
+    return true
+  }
+
+  async function quickOpenGroup(){
+    if(!quickGroupSel){ message.warning('請先選擇群組'); return }
+    if(!ensureTarget()) return
+    const targets = getTargetHosts()
+    const group = quickGroupSel
+    const addr = 25400 + (group-1)
+    for(const h of targets){
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC06(tid, 1, addr, 1, true) // UnitId 預設 1
+      try{
+        const data = await sendHex(h, pkt)
+        emitLog('GROUP-ON', toHexSp(pkt), spaced(data))
+      }catch(e:any){ message.error(`${h.name} 群組 ${group} 觸發失敗: ${e?.message||'error'}`) }
+    }
+  message.success(`群組 ${group} 已觸發（${targets.length} 台主機）`)
+  // 開啟後同步右側燈號（稍候片刻）
+  await delayedSync()
+  }
+
+  async function quickSetGroup(on:boolean){
+    if(!quickGroupSel){ message.warning('請先選擇群組'); return }
+    if(!ensureTarget()) return
+    const targets = getTargetHosts()
+    const group = quickGroupSel
+    const addr = 25400 + (group-1)
+    const val = on? 1: 0
+    for(const h of targets){
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC06(tid, 1, addr, val, true)
+      try{
+        const data = await sendHex(h, pkt)
+        emitLog(on? 'GROUP-ON' : 'GROUP-OFF', toHexSp(pkt), spaced(data))
+      }catch(e:any){ message.error(`${h.name} 群組 ${group} ${on?'開啟':'關閉'}失敗: ${e?.message||'error'}`) }
+    }
+    message.success(`群組 ${group} 已${on?'開啟':'關閉'}（${targets.length} 台主機）`)
+  }
+
+  function computeSceneOptions(){
+    const targets = getTargetHosts()
+    const opts = Array.from({length:48}, (_,i)=>{
+      const scene = i+1
+      // 若任一主機未設定對應，則禁用
+      const anyMissing = targets.some(h=> {
+        const map = mappingByHost[h.id]
+        const g = map?.[i] ?? 0
+        return !(g>=1 && g<=32)
+      })
+      return { value: scene, label: anyMissing? `場景 ${scene}（沒有設定對應）` : `場景 ${scene}`, disabled: anyMissing }
+    })
+    return opts
+  }
+
+  async function quickOpenScene(){
+    if(!quickSceneSel){ message.warning('請先選擇場景'); return }
+    if(!ensureTarget()) return
+    const scene = quickSceneSel
+    const targets = getTargetHosts()
+    for(const h of targets){
+      const map = mappingByHost[h.id] || []
+      const group = map[scene-1] || 0
+      if(!(group>=1 && group<=32)){ message.error(`${h.name} 尚未設定場景 ${scene} 對應群組`); continue }
+      // 新規格：每 8 場景一個暫存器，寫入 bitmask
+      const block = Math.floor((scene-1)/8)
+      const bit = (scene-1) % 8
+      const addr = 20000 + (group-1)*48 + block*8
+      const val = 1 << bit
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC06(tid, 1, addr, val, true)
+      try{
+        const data = await sendHex(h, pkt)
+        emitLog('SCENE-ON', toHexSp(pkt), spaced(data))
+      }catch(e:any){ message.error(`${h.name} 場景 ${scene} 觸發失敗: ${e?.message||'error'}`) }
+    }
+  message.success(`場景 ${scene} 已觸發（${targets.length} 台主機）`)
+  // 開啟後同步右側燈號（稍候片刻）
+  await delayedSync()
+  }
+
+  async function quickSetScene(on:boolean){
+    if(!quickSceneSel){ message.warning('請先選擇場景'); return }
+    if(!ensureTarget()) return
+    const scene = quickSceneSel
+    const targets = getTargetHosts()
+    for(const h of targets){
+      const map = mappingByHost[h.id] || []
+      const group = map[scene-1] || 0
+      if(!(group>=1 && group<=32)){ message.error(`${h.name} 尚未設定場景 ${scene} 對應群組`); continue }
+      const block = Math.floor((scene-1)/8)
+      const bit = (scene-1) % 8
+      const addr = 20000 + (group-1)*48 + block*8
+      const val = on ? (1 << bit) : 0
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC06(tid, 1, addr, val, true)
+      try{
+        const data = await sendHex(h, pkt)
+        emitLog(on?'SCENE-ON':'SCENE-OFF', toHexSp(pkt), spaced(data))
+      }catch(e:any){ message.error(`${h.name} 場景 ${scene} ${on?'開啟':'關閉'}失敗: ${e?.message||'error'}`) }
+    }
+    message.success(`場景 ${scene} 已${on?'開啟':'關閉'}（${targets.length} 台主機）`)
+    // 關閉時強制關燈（單暫存器遮罩）
+    if(!on){ try{ await forceMaskOff() }catch{} }
+    // 同步右側燈號（稍候片刻）
+    await delayedSync()
+  }
+
+  async function forceMaskOff(){
+    if(!curHost || selectedUnitId==null){ message.info('請先選擇右側的從機'); return }
+    // 先樂觀更新 UI 再寫入
+    setMaskValue(0)
+    setQuickGroupOn(false)
+    setQuickSceneOn(false)
+    try{ await writeMask(curHost, selectedUnitId, 0) }catch(e){ /* ignore */ }
+  }
+
+  async function delayedSync(ms=300){
+    if(!curHost || selectedUnitId==null) return
+    setSyncing(true)
+    const attempts = 3
+    for(let i=0;i<attempts;i++){
+      await new Promise(r=> setTimeout(r, ms))
+      try{ await readMask(curHost, selectedUnitId, curSlave?.typeValue ?? undefined) }catch{}
+      if(curSlave?.typeValue===2){ try{ await readDimmingAll(curHost, selectedUnitId) }catch{} }
+    }
+    setSyncing(false)
+  }
+
+  
+
+  function ensureMappingArray(hostId:string){
+    setMappingByHost(prev=> prev[hostId]? prev : ({ ...prev, [hostId]: Array(48).fill(0) }))
+  }
+
+  function parseFC03Multi(hex:string): number[]|null{
+    const clean=hex.replace(/\s+/g,'')
+    const bs=(clean.match(/.{1,2}/g)||[]).map(x=>parseInt(x,16))
+    if(bs.length<9) return null
+    // MBAP(0..6), PDU start at 7
+    if(bs[7]!==0x03) return null
+    const byteCount = bs[8]
+    const data = bs.slice(9, 9+byteCount)
+    if(data.length%2!==0) return null
+    const out:number[]=[]
+    for(let i=0;i<data.length;i+=2){ out.push(((data[i]&0xff)<<8) | (data[i+1]&0xff)) }
+    return out
+  }
+
+  async function readMapping(h:HostEntry){
+    const base = 24100
+    const qty = 48
+    // 先嘗試一次性讀取 48 筆
+    try{
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC03(tid, 1, base, qty, true)
+      const data = await sendHex(h, pkt)
+      emitLog('MAP-R', toHexSp(pkt), spaced(data))
+      const vals = parseFC03Multi(data)
+      if(vals && vals.length>=48){
+        const clipped = vals.slice(0,48).map(v=> (v>=0 && v<=31)? (v+1) : 0) // 0..31 => 群組1..32，其他=>未設定
+        setMappingByHost(prev=> ({ ...prev, [h.id]: clipped }))
+        setMappingBaseByHost(prev=> ({ ...prev, [h.id]: clipped.slice() }))
+        message.success(`${h.name} 對應已讀取（批次）`)
+        return clipped
+      }
+    }catch(e:any){ /* 轉為逐筆讀取 */ }
+
+    // 批次失敗，逐筆讀取 24100..24147
+    const out:number[] = Array(48).fill(0)
+  for(let i=0;i<48;i++){
+      try{
+        const addr = base + i
+        const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+        const pkt1 = buildFC03(tid, 1, addr, 1, true)
+        const data1 = await sendHex(h, pkt1)
+        emitLog('MAP-R1', toHexSp(pkt1), spaced(data1))
+        const v = parseFC03One(data1)
+        out[i] = (v!=null && v>=0 && v<=31)? (v+1) : 0
+      }catch{
+        out[i] = 0
+      }
+    }
+    setMappingByHost(prev=> ({ ...prev, [h.id]: out }))
+    setMappingBaseByHost(prev=> ({ ...prev, [h.id]: out.slice() }))
+    message.success(`${h.name} 對應已讀取（逐筆）`)
+    return out
+  }
+
+  async function writeMappingRows(h:HostEntry, rows:MappingRow[]){
+    const base = mappingBaseByHost[h.id]?.slice() || Array(48).fill(0)
+    const curr = Array(48).fill(0)
+    for(const r of rows){ if(r.scene>=1 && r.scene<=48){ curr[r.scene-1] = clamp(r.group||0, 0, 32) } }
+    const diffs: Array<{scene:number, code:number}> = []
+    for(let i=0;i<48;i++){
+      const before = base[i] // 1..32 or 0
+      const after = curr[i]
+      if(before !== after){
+        // encode 0-based for register
+        const code = after>0? (after-1) : 0
+        diffs.push({ scene: i+1, code })
+      }
+    }
+    if(diffs.length===0){ message.info('沒有變更需要儲存'); return }
+    for(const u of diffs){
+      const addr = 24100 + (u.scene-1)
+      const tid=(h.tid+1)&0xffff; setHosts(list=> list.map(x=> x.id===h.id?{...x, tid}:{...x}))
+      const pkt = buildFC06(tid, 1, addr, u.code, true)
+      try{ const data = await sendHex(h, pkt); emitLog('MAP-W', toHexSp(pkt), spaced(data)) }catch(e:any){ message.error(`${h.name} 場景${u.scene} 對應寫入失敗: ${e?.message||'error'}`) }
+    }
+    setMappingByHost(prev=> ({ ...prev, [h.id]: curr }))
+    setMappingBaseByHost(prev=> ({ ...prev, [h.id]: curr.slice() }))
+    message.success(`${h.name} 對應已儲存（${diffs.length} 筆變更）`)
+  }
 
   // ===== Modbus TCP FC03/FC06 builders =====
   function buildFC06(tid:number, unitId:number, addr:number, value:number, withMbap=true){ const pdu=[0x06, ...numToBytes(addr,2), ...numToBytes(value,2)]; if(!withMbap) return pdu; const len=pdu.length+1; const mbap=[...numToBytes(tid&0xffff,2), 0x00,0x00, ...numToBytes(len,2), unitId&0xff]; return [...mbap, ...pdu] }
@@ -163,6 +464,14 @@ export default function Unified(){
     }
   }
 
+  // 當遮罩為 0（全部關燈）時，讓群組/場景的開關也呈現關閉
+  useEffect(()=>{
+    if((maskValue & 0xff)===0){
+      setQuickGroupOn(false)
+      setQuickSceneOn(false)
+    }
+  }, [maskValue])
+
   // 依類型執行一次同步：8CH 僅讀遮罩；4CH 讀遮罩 + 讀全部調光
   async function syncByType(h:HostEntry, unit:number, typ:number|null|undefined){
     if(typ==null) return;
@@ -241,6 +550,38 @@ export default function Unified(){
                 <Button type="primary" icon={<PlusOutlined />} onClick={addHost}>新增主機</Button>
                 <Button icon={<SaveOutlined />} onClick={exportToFile} disabled={!hosts.length}>匯出 JSON</Button>
                 <Button icon={<FolderOpenOutlined />} onClick={importFromFile}>匯入 JSON</Button>
+                {/* 快捷開關：群組/場景（TCP 直接寫入主機暫存器） */}
+                <Space>
+                  <Select
+                    style={{width:160}}
+                    placeholder="群組（選擇）"
+                    value={quickGroupSel}
+                    onChange={async (v)=>{ setQuickGroupSel(v); if(autoOffOnGroupSel){ await forceMaskOff() } }}
+                    options={Array.from({length:32},(_,i)=>({ value:i+1, label:`群組 ${i+1}` }))}
+                  />
+                  <Switch
+                    checked={quickGroupOn}
+                    onChange={async (on)=>{ setQuickGroupOn(on); await quickSetGroup(on) }}
+                    checkedChildren="開"
+                    unCheckedChildren="關"
+                  />
+                  <Select
+                    style={{width:180}}
+                    placeholder="場景（選擇）"
+                    value={quickSceneSel}
+                    onChange={async (v)=>{ setQuickSceneSel(v); if(autoOffOnSceneSel){ await forceMaskOff() } }}
+                    options={computeSceneOptions()}
+                  />
+                  <Switch
+                    checked={quickSceneOn}
+                    onChange={async (on)=>{ setQuickSceneOn(on); await quickSetScene(on) }}
+                    checkedChildren="開"
+                    unCheckedChildren="關"
+                  />
+                  <Button icon={<SettingOutlined />} onClick={()=> openTriggerConfig()}>
+                    觸發設定
+                  </Button>
+                </Space>
               </Space>
 
               <Table<HostEntry>
@@ -327,9 +668,9 @@ export default function Unified(){
                       </Tag>
                     </Space>
                   )},
-                  { title: '操作', key: 'actions', width: 260, render: (_:any,h:HostEntry) => (
+                  { title: '操作', key: 'actions', width: 420, render: (_:any,h:HostEntry) => (
                     <Space>
-                      <Button size="small" icon={<PlusOutlined />} onClick={()=>{
+                      <Tooltip title="新增從機"><Button size="small" icon={<PlusOutlined />} onClick={()=>{
                         Modal.confirm({
                           title: '新增從機',
                           content: (
@@ -348,8 +689,8 @@ export default function Unified(){
                             addSlave(h, v, nm);
                           }
                         })
-                      }}>新增從機</Button>
-                      <Button size="small" onClick={()=>{
+                      }}/></Tooltip>
+                      <Tooltip title="編輯主機"><Button size="small" icon={<EditOutlined />} onClick={()=>{
                         Modal.confirm({
                           title: `編輯主機 ${h.name}`,
                           content: (
@@ -369,8 +710,8 @@ export default function Unified(){
                             setHosts(list=> list.map(x=> x.id===h.id? { ...x, name: newName||x.name, host: newHost||x.host, port: isNaN(newPort)? x.port : newPort } : x))
                           }
                         })
-                      }}>編輯</Button>
-                      <Button size="small" danger icon={<DeleteOutlined />} onClick={()=>{
+                      }}/></Tooltip>
+                      <Tooltip title="刪除主機"><Button size="small" danger icon={<DeleteOutlined />} onClick={()=>{
                         Modal.confirm({
                           title: '確認刪除',
                           content: `確定要刪除主機 "${h.name}" 嗎?`,
@@ -379,7 +720,8 @@ export default function Unified(){
                           cancelText: '取消',
                           onOk: () => deleteHost(h.id)
                         })
-                      }}>刪除</Button>
+                      }}/></Tooltip>
+                      <Button size="small" onClick={()=> openMapModal(h)}>群組/場景對應</Button>
                     </Space>
                   )}
                 ]}
@@ -662,6 +1004,76 @@ export default function Unified(){
 
       {/* Logs */}
       {/* 日誌已移至 App Header 的跑馬燈顯示 */}
+      {/* Mapping Modal */}
+      <Modal
+        open={!!mapModalHostId}
+        onCancel={closeMapModal}
+        width={760}
+        title="群組/場景對應設定"
+        footer={null}
+      >
+        {mapModalHostId && (
+          <Space direction="vertical" style={{width:'100%'}}>
+            <Space>
+              <Button size="small" onClick={async()=>{
+                const h = hosts.find(x=> x.id===mapModalHostId)
+                if(!h) return
+                const vals = await readMapping(h)
+                if(vals){
+                  setMappingByHost(prev=> ({...prev, [h.id]: vals}))
+                  // 依讀回值重建 rows（只列出已設定的）
+                  const names = mappingNamesByHost[h.id] || []
+                  const rows:MappingRow[] = []
+                  for(let i=0;i<48;i++){
+                    const g = vals[i] || 0
+                    if(g>0){ rows.push({ key:`${i+1}`, scene:i+1, group:g, name:names[i]||'', editing:false }) }
+                  }
+                  setMapRows(rows)
+                }
+              }}>讀取</Button>
+              <Button size="small" type="primary" onClick={async()=>{
+                const h = hosts.find(x=> x.id===mapModalHostId)
+                if(!h) return
+                // 以 rows 直接寫入（0-based）
+                await writeMappingRows(h, mapRows)
+                // 名稱本地保存
+                const names = Array(48).fill('')
+                for(const r of mapRows){ if(r.scene>=1 && r.scene<=48) names[r.scene-1] = r.name||'' }
+                setMappingNamesByHost(prev=> ({ ...prev, [h.id]: names }))
+              }}>儲存</Button>
+              <Button size="small" onClick={addMapRow}>新增一列</Button>
+            </Space>
+            <Table
+              size="small"
+              rowKey="key"
+              pagination={false}
+              dataSource={mapRows}
+              columns={[
+                { title:'場景名稱', dataIndex:'name', render:(v:any, r:MappingRow)=> r.editing? (
+                  <Input value={r.name} onChange={e=> updateMapRow(r.key, { name: e.target.value })} />
+                ) : (<span>{r.name||'-'}</span>) },
+                { title:'場景', dataIndex:'scene', width:120, render:(v:any, r:MappingRow)=> r.editing? (
+                  <Select value={r.scene} style={{width:100}} onChange={val=> updateMapRow(r.key, { scene: val })} options={Array.from({length:48},(_,i)=>({ value:i+1, label:`${i+1}` }))} />
+                ) : (<span>{r.scene}</span>) },
+                { title:'對應群組', dataIndex:'group', width:160, render:(v:any, r:MappingRow)=> r.editing? (
+                  <Select value={r.group} style={{width:140}} onChange={val=> updateMapRow(r.key, { group: val })} options={[{value:0,label:'未設定'}, ...Array.from({length:32},(_,i)=>({ value:i+1, label:`群組 ${i+1}` }))]} />
+                ) : (<span>{r.group>0? `群組 ${r.group}` : '未設定'}</span>) },
+                { title:'操作', key:'op', width:160, render: (_:any, r:MappingRow)=> (
+                  <Space>
+                    {r.editing? (
+                      <Button size="small" type="primary" onClick={()=> updateMapRow(r.key, { editing:false })}>完成</Button>
+                    ) : (
+                      <Button size="small" onClick={()=> updateMapRow(r.key, { editing:true })}>編輯</Button>
+                    )}
+                    <Button size="small" danger onClick={()=> deleteMapRow(r.key)}>刪除</Button>
+                  </Space>
+                )}
+              ]}
+            />
+            <Typography.Paragraph type="secondary" style={{marginTop:8}}>最多 48 筆；儲存會寫入 24100..24147（0=未設定）。</Typography.Paragraph>
+          </Space>
+        )}
+      </Modal>
       </Space>
     </div>
   )
