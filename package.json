@@ -36,12 +36,16 @@
     "appId": "com.example.modbus",
     "productName": "ModbusApp",
     "asar": true,
+    "asarUnpack": [
+      "node_modules/serialport/**"
+    ],
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**",
       "dist-electron/**",
+      "node_modules/**",
       "!**/*.map"
     ],
     "win": {

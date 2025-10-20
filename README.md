@@ -39,3 +39,6 @@ npm run package:win
 ## 注意
 - Preload 暴露的 API 位於 `electron/preload.ts`，並以 `window.api` 提供給前端使用。
 - 如需 Node 模組，請在主進程使用，避免在 Renderer 直接使用 Node 內建 API。
+
+
+npm run package:nsis 打包指令

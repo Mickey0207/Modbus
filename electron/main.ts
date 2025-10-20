@@ -63,13 +63,14 @@ app.whenReady().then(() => {
       let acc = Buffer.alloc(0)
       const chunks: string[] = []
       let expectTotal: number | null = null
-      let fallbackTimer: NodeJS.Timeout | null = null
+  // 注意：避免過早結束導致回傳不完整資料，僅使用 socket timeout 作為總逾時控制
+  // 不再使用固定的 fallback 計時
 
       const cleanup = (result: any) => {
         if (settled) return
         settled = true
         try { socket.destroy() } catch {}
-        if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null }
+        // no extra timers to clear
         resolve(result)
       }
 
@@ -79,8 +80,12 @@ app.whenReady().then(() => {
         const msg = String(err?.message || err)
         const code = (err && (err.code as string)) || ''
         if ((code === 'ECONNRESET' || msg.includes('ECONNRESET')) && acc.length) {
-          // 若已累積到資料，視為成功回傳（某些設備在送完即刻 RST）
-          cleanup({ ok: true, data: acc.toString('hex'), chunks })
+          // 僅在完整幀時視為成功
+          if (expectTotal != null && acc.length >= expectTotal) {
+            cleanup({ ok: true, data: acc.subarray(0, expectTotal).toString('hex'), chunks })
+          } else {
+            cleanup({ ok: false, error: 'connection reset before complete frame', data: acc.toString('hex'), chunks })
+          }
         } else {
           cleanup({ ok: false, error: msg })
         }
@@ -102,20 +107,24 @@ app.whenReady().then(() => {
         }
       })
       socket.on('close', () => {
-        // 若在未決狀態下被關閉，仍回傳已收資料（有些設備會主動關閉）
+        // 若在未決狀態下被關閉，僅在完整幀時回傳成功，否則視為失敗
         if (!settled) {
-          cleanup({ ok: true, data: acc.length ? acc.toString('hex') : undefined, chunks })
+          if (expectTotal != null && acc.length >= expectTotal) {
+            const frame = acc.subarray(0, expectTotal)
+            cleanup({ ok: true, data: frame.toString('hex'), chunks })
+          } else {
+            cleanup({ ok: false, error: 'socket closed before complete frame', data: acc.length ? acc.toString('hex') : undefined, chunks })
+          }
         }
       })
 
       socket.connect(port, host, () => {
+        try { socket.setNoDelay(true) } catch {}
+        try { socket.setKeepAlive(true, 10_000) } catch {}
         const sanitized = hex.replace(/\s+/g, '')
         const out = Buffer.from(sanitized, 'hex')
         socket.write(out)
-        // 後備：若 2 秒內未讀滿也未關閉，則主動結束並回傳已收到的內容
-        fallbackTimer = setTimeout(() => {
-          if (!settled) cleanup({ ok: true, data: acc.length ? acc.toString('hex') : undefined, chunks })
-        }, 2000)
+        // 僅依據 MBAP 長度與 socket timeout 來決定結束，不做固定 fallback
       })
     })
   })

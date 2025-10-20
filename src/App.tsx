@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Unified from './pages/Unified'
-import TestRead from './pages/TestRead'
 
 type LogItem = { id: string; tag: string; tx: string; rx: string; t: number }
 
@@ -33,18 +32,11 @@ export default function App() {
   const current = logs[marqIdx]
   const curColor = current ? colors[marqIdx % colors.length] : '#64748b'
 
-  const [page, setPage] = useState<'unified'|'test'>('unified')
+  // 頂部導航已移除；固定顯示 Unified 頁面
 
   return (
     <div style={{ minHeight: '100vh', background: '#f5f7fb', color: '#1a1a1a' }}>
       <header style={{ background: '#ffffff', borderBottom: '1px solid #eee', padding: 0 }}>
-        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontWeight: 700 }}>Modbus 工具（單頁）</div>
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setPage('unified')} style={{ padding:'6px 10px', border:'1px solid #e5e7eb', background: page==='unified'?'#2563eb':'#fff', color: page==='unified'?'#fff':'#111827', borderRadius:6 }}>Unified</button>
-            <button onClick={()=>setPage('test')} style={{ padding:'6px 10px', border:'1px solid #e5e7eb', background: page==='test'?'#2563eb':'#fff', color: page==='test'?'#fff':'#111827', borderRadius:6 }}>Read Test</button>
-          </div>
-        </div>
         {/* Marquee bar */}
         <div onClick={() => setShowLogPanel(v => !v)} style={{ cursor:'pointer', userSelect:'none', padding:'6px 12px', background:'#0f172a', color:'#e2e8f0', borderTop:'1px solid #0b1220', borderBottom: showLogPanel? '1px solid #1f2937' : '1px solid #0b1220' }}>
           {current ? (
@@ -94,7 +86,7 @@ export default function App() {
         )}
       </header>
       <main>
-        {page==='unified' ? <Unified /> : <TestRead />}
+        <Unified />
       </main>
       {msg && <div style={{ position: 'fixed', right: 12, bottom: 8, color: '#7a8899', fontSize: 12 }}>preload: {msg}</div>}
     </div>
